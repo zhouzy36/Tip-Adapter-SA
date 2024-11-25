@@ -1,6 +1,7 @@
 # coding=utf-8
 import argparse
 import clip
+import math
 import numpy as np
 import re
 import torch
@@ -16,17 +17,24 @@ from dataloader import NumpyDataset, ResizeToPatchSizeDivisible
 from clip_text import class_names_voc, BACKGROUND_CATEGORY_VOC, class_names_coco, BACKGROUND_CATEGORY_COCO
 
 """
-Example:
-python MyZSCLIP.py --dataset coco2014
-python MyZSCLIP.py --dataset voc2012
+Examples:
+python MyZSCLIP_FF.py --dataset coco2014
+python MyZSCLIP_FF.py --dataset voc2012
+python MyZSCLIP_FF.py --dataset coco2014 --num-scales 3
+python MyZSCLIP_FF.py --dataset voc2012 --num-scales 3
 """
 
 # parse arguments
-parser = argparse.ArgumentParser(description="My Zero-Shot CLIP without feature fusion.")
-parser.add_argument("--dataset", type=str, default="coco2014", choices=['voc2012', 'coco2014'])
+parser = argparse.ArgumentParser(description="My Zero-Shot CLIP with multi-scale feature fusion.")
+parser.add_argument("--dataset", type=str, default="coco2014", choices=["voc2012", "coco2014"])
+parser.add_argument("--num-scales", type=int, default=2, help="The number of input scales (default: 2).")
+parser.add_argument("--max-reduction", type=float, default=2, help="The maximum downsampling rate of the image (default: 2).")
 args = parser.parse_args()
 print(args)
 device = torch.device("cuda:0")
+
+# compute scale factor
+scale_factor = 1 / math.pow(args.max_reduction, 1 / (args.num_scales - 1))
 
 # data path
 if args.dataset == "voc2012":
@@ -110,13 +118,14 @@ with torch.no_grad():
     text_features = text_features / text_features.norm(dim=-1, keepdim=True) # [num_classes, d]
 print(text_features.shape, text_features.dtype)
 
-# dataloader
+# data transformation
 transform = transforms.Compose([
-    ResizeToPatchSizeDivisible(patch_size),
     transforms.ToTensor(),
     transforms.Normalize((0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711)),
 ])
+adaptive_resize = ResizeToPatchSizeDivisible(patch_size)
 
+# dataloader
 dataset = NumpyDataset(img_root, image_list, full_label_list, transform=transform)
 dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
 
@@ -125,25 +134,54 @@ pred_logits = []
 label_vectors = []
 with torch.no_grad():
     for image, label in tqdm(dataloader):
+        # move image to device
         image = image.to(device)
-        # reset global variables
-        attention_weights = []
-        last_features = None
-        penultimate_features = None
-        # forward
-        h, w = image.shape[-2:]
-        class_feature = model.encode_image(image, h, w)
-        aligned_features = post_process(model, last_features, batch_first=False, only_class=False) # [1, L+1, D]
+        
+        # perform multi-scale feature fusion
+        fused_patch_features = None
+        hr_attention_weights = None # record the attention weights of the image at the original resolution
+        hr_h, hr_w = None, None # record the height and width of the image at the original resolution
+        # process multi-scale inputs
+        for ii in range(args.num_scales):
+            # reset global variable
+            attention_weights = []
+            last_features = None
+            penultimate_features = None
+            # forward
+            image = adaptive_resize(image)
+            h, w = image.shape[-2:]
+            model.encode_image(image, h=h, w=w)
+            aligned_features = post_process(model, last_features, batch_first=False, only_class=False) # [1, L+1, D]
+            patch_features = aligned_features[:, 1:, :] # [1, L, D]
+            # perform feature fusion
+            if ii == 0:
+                hr_h, hr_w = h, w
+                hr_attention_weights = attention_weights.copy()
+                fused_patch_features = patch_features # [1, L, D]
+            else:
+                N, _, D = patch_features.shape
+                feature_map = patch_features.reshape([N, h // patch_size, w // patch_size, D]).permute([0, 3, 1, 2])
+                # upsample the low-resolution feature map back to the original resolution
+                feature_map = F.interpolate(feature_map, 
+                                            size=(hr_h // patch_size, hr_w // patch_size), 
+                                            mode='bilinear', 
+                                            align_corners=False)
+                patch_features = feature_map.reshape([N, D, -1]).permute([0, 2, 1])
+                fused_patch_features += patch_features
+            # downsample image
+            image = F.interpolate(image, scale_factor=scale_factor, mode='bilinear', align_corners=False)
+        fused_patch_features /= args.num_scales # average multi-scale feature maps
+
         # patch level classify
-        logits = patch_classify(aligned_features, text_features, logit_scale=logit_scale, drop_first=True)
+        logits = patch_classify(fused_patch_features, text_features, drop_first=False)
         # refine
-        logits = double_mask_attention_refine(logits.squeeze(), h, w, patch_size, attention_weights)
+        logits = double_mask_attention_refine(logits.squeeze(), hr_h, hr_w, patch_size, hr_attention_weights)
         # predict
         logits_max = torch.max(logits, dim=0)[0]
         logits_max = logits_max[:NUM_CLASSES]
         pred_logits.append(logits_max.cpu())
         label_vectors.append(label)
-        
+
 pred_logits = torch.stack(pred_logits, dim=0)
 label_vectors = torch.cat(label_vectors, dim=0)
 
