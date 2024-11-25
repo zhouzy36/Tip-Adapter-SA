@@ -9,13 +9,13 @@ from utils import scoremap2bbox
 
 @torch.no_grad()
 def key_smoothing(logits: torch.Tensor, model: clip.model.CLIP, penultimate_features: torch.Tensor):
-    """Refine logits using key similarities of the last ViT layer proposed in MaskCLIP
+    """Refine logits using key similarities of the last ViT layer proposed in MaskCLIP.
     Args:
-        logits (Tensor): patch-level classification logits with size [N, L, C]
-        model (CLIP): CLIP model
-        penultimate_features (Tensor): output of penultimate ViT layer with size [L+1, N, C]
+        logits (Tensor): The patch-level classification logits with size [N, L, C].
+        model (CLIP): CLIP model.
+        penultimate_features (Tensor): The output of penultimate ViT layer with size [L+1, N, C].
     Returns:
-        refined_logits: refined logits with the same size as input logits
+        refined_logits: The refined logits with the same size as input logits.
     """
     # check batch size and patch length
     assert logits.shape[0] == penultimate_features.shape[1]
@@ -54,15 +54,15 @@ def raw_attention_refine(logits: torch.Tensor,
                      last_k: int = 3,
                      mask: bool = True,
                      vote_k: int = 4):
-    """Refine logits using attention weights
+    """Refine logits using attention weights.
     Args:
-        logits (Tensor): patch-level classification logits with size [N, L, C]
-        attn_weight_list (List): list of attention weight with size [N, L+1, L+1]
-        last_k (int): use attention weights of the last k layers except the last (default: 3)
-        mask (bool): generate attention mask according to eq(12) of TagCLIP paper
-        vote_k (int): K in eq(12) of TagCLIP paper (default: 4)
+        logits (Tensor): The patch-level classification logits with size [N, L, C].
+        attn_weight_list (List): The list of attention weight with size [N, L+1, L+1].
+        last_k (int): Use attention weights of the last k layers except the last (default: 3).
+        mask (bool): Generate attention mask according to eq(12) of TagCLIP paper if set (default: True).
+        vote_k (int): The K in eq(12) of TagCLIP paper (default: 4).
     Returns:
-        refined_logits (Tensor): refined logits with the same size as input logits
+        refined_logits (Tensor): The refined logits with the same size as input logits.
     """
     attn_weights = torch.stack(attn_weight_list[:-1], dim=1) # discard the last attention weights
     attn_weights = attn_weights[..., 1:, 1:] # discard class token related attention weights
@@ -92,16 +92,16 @@ def class_attention_refine(logits: torch.Tensor,
                            patch_size: int,
                            attn_weight_list: List[torch.Tensor],
                            last_k: int = 3):
-    """Refine logtis using masked attention weights where masks are generated according to logits
+    """Refine logtis using masked attention weights where masks are generated according to logits.
     Args:
-        logits (Tensor): patch-level classification logits with size [L, C]
-        h (int): image height
-        w (int): image width
-        patch_size (int): ViT input patch size
-        attn_weights (Tensor): list of attention weight with size [N, L+1, L+1]
-        last_k (int): use attention weights of the last k layers except the last (default: 3)
+        logits (Tensor): The patch-level classification logits with size [L, C].
+        h (int): Image height.
+        w (int): Image width.
+        patch_size (int): ViT input patch size.
+        attn_weights (Tensor): The list of attention weight with size [N, L+1, L+1].
+        last_k (int): Use attention weights of the last k layers except the last (default: 3).
     Returns:
-        refined_logits (Tensor): refined logits with the same size as input logits
+        refined_logits (Tensor): The refined logits with the same size as input logits.
     """
     refined_logits = logits.clone()
     attn_weights = torch.stack(attn_weight_list[:-1], dim=1) # discard the last attention weights
@@ -138,17 +138,17 @@ def double_mask_attention_refine(logits: torch.Tensor,
                                  last_k: int = 3,
                                  vote_k: int = 4
                                  ):
-    """DMAR module proposed in TagCLIP
+    """Modified DMAR module proposed in TagCLIP: generate class-wise mask based on coarse logits for all classes.
     Args:
-        logits (Tensor): patch-level classification logits with size [L, C]
-        h (int): image height
-        w (int): image width
-        patch_size (int): ViT input patch size
-        attn_weight_list (List): list of attention weight with size [1, L+1, L+1]
-        last_k (int): use attention weights of the last k layers except the last (default: 3)
-        vote_k (int): K in eq(12) of TagCLIP paper (default: 4)
+        logits (Tensor): The patch-level classification logits with size [L, C].
+        h (int): Image height.
+        w (int): Image width.
+        patch_size (int): ViT input patch size.
+        attn_weight_list (List): The list of attention weight with size [1, L+1, L+1].
+        last_k (int): Use attention weights of the last k layers except the last (default: 3).
+        vote_k (int): The K in eq(12) of TagCLIP paper (default: 4).
     Returns:
-        refined_logits (Tensor): refined logits with the same size as input logits
+        refined_logits (Tensor): The refined logits with the same size as input logits.
     """
     assert len(logits.shape) == 2, "The expected input size of logits is [L, C]"
 
@@ -172,17 +172,8 @@ def double_mask_attention_refine(logits: torch.Tensor,
     attn_refined_logits = refine_weights @ coarse_logits
     refined_logits = attn_refined_logits.clone()
 
-    # logits_max = torch.max(attn_refined_logits, dim=0)[0]
-    # candidate_cls_list = []
-    # for tempid,tempv in enumerate(logits_max):
-    #     if tempv > 0:
-    #         candidate_cls_list.append(tempid)
-
     for cls_idx in range(logits.shape[-1]):
-    # for cls_idx in candidate_cls_list:
-        # get logits map
-        # cls_logits = attn_refined_logits[:, cls_idx] # [L] DMAR
-        cls_logits = coarse_logits[:, cls_idx] # [L] DMAR*
+        cls_logits = coarse_logits[:, cls_idx]
         logits_map = cls_logits.clone()
         logits_map = (logits_map - logits_map.min()) / (logits_map.max() - logits_map.min()) # min-max normalize
         logits_map = logits_map.reshape(h // patch_size, w // patch_size)
@@ -211,17 +202,17 @@ def my_double_mask_attention_refine(logits: torch.Tensor,
                                  last_k: int = 3,
                                  vote_k: int = 4
                                  ):
-    """Modifed DMAR module: do OR operation between two masks rather than multiplication
+    """Modifed DMAR module proposed in TagCLIP: do OR operation between two masks rather than multiplication.
     Args:
-        logits (Tensor): patch-level classification logits with size [L, C]
-        h (int): image height
-        w (int): image width
-        patch_size (int): ViT input patch size
-        attn_weight_list (List): list of attention weight with size [1, L+1, L+1]
-        last_k (int): use attention weights of the last k layers except the last (default: 3)
-        vote_k (int): K in eq(12) of TagCLIP paper (default: 4)
+        logits (Tensor): The patch-level classification logits with size [L, C].
+        h (int): Image height.
+        w (int): Image width.
+        patch_size (int): ViT input patch size.
+        attn_weight_list (List): The list of attention weight with size [1, L+1, L+1].
+        last_k (int): Use attention weights of the last k layers except the last (default: 3).
+        vote_k (int): The K in eq(12) of TagCLIP paper (default: 4).
     Returns:
-        refined_logits (Tensor): refined logits with the same size as input logits
+        refined_logits (Tensor): The refined logits with the same size as input logits.
     """
     refined_logits = logits.clone()
     attn_weights = torch.stack(attn_weight_list[:-1], dim=1).squeeze(0) # [11, L+1, L+1]
@@ -264,14 +255,14 @@ def my_double_mask_attention_refine(logits: torch.Tensor,
 
 
 def extract_class_specific_features(patch_feats: torch.Tensor, logits: torch.Tensor, labels: torch.Tensor):
-    """Extract class specific features by averaging class specific patch features
+    """Extract class specific features by averaging class specific patch features.
     Args:
-        patch_feats (Tensor): patch features with size [L, D]
-        logits (Tensor): refined patch classification logtis with size [L, C]
-        labels (Tensor): label tensor with size [1, num_labels]
+        patch_feats (Tensor): The patch features with size [L, D].
+        logits (Tensor): The refined patch classification logtis with size [L, C].
+        labels (Tensor): The label tensor with size [1, num_labels].
         
     Retuens:
-        class_specific_features (Tensor): features with size [num_labels, D]
+        class_specific_features (Tensor): Features with size [num_labels, D].
     """
     assert patch_feats.dim() == 2 and logits.dim() == 2
     assert patch_feats.shape[0] == logits.shape[0]
