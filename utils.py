@@ -6,6 +6,7 @@ import numpy as np
 import random
 import torch
 import torch.nn.functional as F
+from torch.utils.data import Dataset
 import torchvision
 import torchvision.transforms as transforms
 from torchvision.transforms import Compose, Resize, ToTensor, Normalize
@@ -13,6 +14,9 @@ from torchvision.transforms import InterpolationMode
 from typing import Optional, List
 BICUBIC = InterpolationMode.BICUBIC
 _CONTOUR_INDEX = 1 if cv2.__version__.split('.')[0] == '3' else 0
+
+from dataset import NumpyDataset
+from clip_text import class_names_voc, BACKGROUND_CATEGORY_VOC, class_names_coco, BACKGROUND_CATEGORY_COCO
 
 
 def scoremap2bbox(scoremap, threshold, multi_contour_eval=False):
@@ -263,9 +267,56 @@ def post_process(model: clip.model.CLIP, x: torch.Tensor, batch_first: bool = Fa
 
 def setup_seed(seed: int):
     """Set up random seed
+    Args:
+        seed (int): Random seed value.
     """
     torch.manual_seed(seed)  # CPU
     torch.cuda.manual_seed_all(seed)  # GPU
     np.random.seed(seed)  # numpy
     random.seed(seed)  # random and transforms
     torch.backends.cudnn.deterministic = True  # cudnn
+
+
+def get_test_dataset(dataset: str, transform=None):
+    """Get pytorch dataset according to the dataset name.
+    Args:
+        dataset (str): Dataset name.
+        transform: Data transformation.
+    Returns:
+        test_dataset (torch.Dataset): Test dataset.
+    """
+    # data path
+    if dataset == "voc2012":
+        img_root = "datasets/voc2012/VOCdevkit/VOC2012/JPEGImages"
+        image_file = "imageset/voc2012/formatted_val_images.npy"
+        full_label_file = "imageset/voc2012/formatted_val_labels.npy"
+    elif dataset == "coco2014":
+        img_root = "datasets/coco2014"
+        image_file = "imageset/coco2014/formatted_val_images.npy"
+        full_label_file = "imageset/coco2014/formatted_val_labels.npy"
+    else:
+        raise NotImplementedError
+    image_list = np.load(image_file)
+    full_label_list = np.load(full_label_file)
+    test_dataset = NumpyDataset(img_root, image_list, full_label_list, transform=transform)
+    return test_dataset
+
+
+def get_class_names(dataset: str, include_background: bool = False):
+    """Get class names according to the dataset name.
+    Args:
+        dataset (str): Dataset name.
+        include_background (bool): Include background classes if set True (default: False).
+    Returns:
+        class_names (list): The list of class names.
+        num_classes (int): The number of classes in the dataset, excluding background classes.
+    """
+    if dataset == "voc2012":
+        class_names = class_names_voc + BACKGROUND_CATEGORY_VOC if include_background else class_names_voc
+        num_classes = len(class_names_voc)
+    elif dataset == "coco2014":
+        class_names = class_names_coco + BACKGROUND_CATEGORY_COCO if include_background else class_names_coco
+        num_classes = len(class_names_coco)
+    else:
+        raise NotImplementedError
+    return class_names, num_classes

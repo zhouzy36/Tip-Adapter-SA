@@ -7,9 +7,8 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from dataloader import NumpyDataset, ResizeToPatchSizeDivisible
-from clip_text import class_names_voc, BACKGROUND_CATEGORY_VOC, class_names_coco, BACKGROUND_CATEGORY_COCO
-from utils import post_process, patch_classify, evaluation, compute_F1
+from dataset import ResizeToPatchSizeDivisible
+from utils import get_test_dataset, get_class_names, post_process, patch_classify, evaluation, compute_F1
 
 """
 Example:
@@ -26,34 +25,16 @@ args = parser.parse_args()
 print(args)
 device = torch.device("cuda:0")
 
-# data path
-if args.dataset == "voc2012":
-    img_root = "datasets/voc2012/VOCdevkit/VOC2012/JPEGImages"
-    image_file = "imageset/voc2012/formatted_val_images.npy"
-    full_label_file = "imageset/voc2012/formatted_val_labels.npy"
-    class_names = class_names_voc
-    NUM_CLASSES = len(class_names_voc)
-elif args.dataset == "coco2014":
-    img_root = "datasets/coco2014"
-    image_file = "imageset/coco2014/formatted_val_images.npy"
-    full_label_file = "imageset/coco2014/formatted_val_labels.npy"
-    class_names = class_names_coco
-    NUM_CLASSES = len(class_names_coco)
-else:
-    raise NotImplementedError
-
-image_list = np.load(image_file)
-full_label_list = np.load(full_label_file)
-print("Dataset:", args.dataset)
-print("The number of classes in dataset:", NUM_CLASSES)
-print("The number of classes in vocabulary:", len(class_names))
-
 # model
 model_path = "pretrained_models/ViT-B-16.pt"
 patch_size = 16
 model, preprocess = clip.load(model_path, device)
 model.eval()
 logit_scale = model.logit_scale.exp().detach()
+
+class_names, NUM_CLASSES = get_class_names(args.dataset)
+print("The number of classes in dataset:", NUM_CLASSES)
+print("The number of classes in vocabulary:", len(class_names))
 
 # classifier weights
 with torch.no_grad():
@@ -69,11 +50,11 @@ if args.keep_resolution:
         transforms.ToTensor(),
         transforms.Normalize((0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711)),
     ])
-    dataset = NumpyDataset(img_root, image_list, full_label_list, transform=transform)
+    dataset = get_test_dataset(args.dataset, transform=transform)
     dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
 else:
     # 224*224
-    dataset = NumpyDataset(img_root, image_list, full_label_list, transform=preprocess)
+    dataset = get_test_dataset(args.dataset, transform=preprocess)
     dataloader = DataLoader(dataset, batch_size=64, shuffle=False)
 
 # inference

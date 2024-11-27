@@ -11,10 +11,9 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from utils import patch_classify, post_process, compute_F1, evaluation
+from dataset import ResizeToPatchSizeDivisible
 from module import double_mask_attention_refine
-from dataloader import NumpyDataset, ResizeToPatchSizeDivisible
-from clip_text import class_names_voc, BACKGROUND_CATEGORY_VOC, class_names_coco, BACKGROUND_CATEGORY_COCO
+from utils import get_test_dataset, get_class_names, patch_classify, post_process, compute_F1, evaluation
 
 """
 Examples:
@@ -35,28 +34,6 @@ device = torch.device("cuda:0")
 
 # compute scale factor
 scale_factor = 1 / math.pow(args.max_reduction, 1 / (args.num_scales - 1))
-
-# data path
-if args.dataset == "voc2012":
-    img_root = "datasets/voc2012/VOCdevkit/VOC2012/JPEGImages"
-    image_file = "imageset/voc2012/formatted_val_images.npy"
-    full_label_file = "imageset/voc2012/formatted_val_labels.npy"
-    class_names = class_names_voc + BACKGROUND_CATEGORY_VOC
-    NUM_CLASSES = len(class_names_voc)
-elif args.dataset == "coco2014":
-    img_root = "datasets/coco2014"
-    image_file = "imageset/coco2014/formatted_val_images.npy"
-    full_label_file = "imageset/coco2014/formatted_val_labels.npy"
-    class_names = class_names_coco + BACKGROUND_CATEGORY_COCO
-    NUM_CLASSES = len(class_names_coco)
-else:
-    raise NotImplementedError
-
-image_list = np.load(image_file)
-full_label_list = np.load(full_label_file)
-print("Dataset:", args.dataset)
-print("The number of classes in dataset:", NUM_CLASSES)
-print("The number of classes in vocabulary:", len(class_names))
 
 # model
 model_path = "pretrained_models/ViT-B-16.pt"
@@ -95,6 +72,7 @@ def output_hook_fn(module, args, output):
     global last_features
     last_features = output
 
+# add hook
 pattern_attn = re.compile(r'^transformer\.resblocks\.\d+\.attn$')
 pattern_mlp = re.compile(r'^transformer\.resblocks\.\d+\.mlp$')
 
@@ -112,6 +90,12 @@ for name, module in model.visual.named_modules(remove_duplicate=False):
         hook = module.register_forward_hook(penultimate_hook_fn)
         hook_handles.append(hook)
 
+# get class names
+class_names, NUM_CLASSES = get_class_names(args.dataset, include_background=True)
+print("Dataset:", args.dataset)
+print("The number of classes in dataset:", NUM_CLASSES)
+print("The number of classes in vocabulary:", len(class_names))
+
 # classifier weights
 with torch.no_grad():
     text_features = clip.encode_text_with_prompt_ensemble(model, class_names, device)
@@ -126,7 +110,7 @@ transform = transforms.Compose([
 adaptive_resize = ResizeToPatchSizeDivisible(patch_size)
 
 # dataloader
-dataset = NumpyDataset(img_root, image_list, full_label_list, transform=transform)
+dataset = get_test_dataset(args.dataset, transform=transform)
 dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
 
 # inference
@@ -188,10 +172,6 @@ label_vectors = torch.cat(label_vectors, dim=0)
 # evaluation
 evaluation(pred_logits, label_vectors)
 
-# clear hooks
-for hook in hook_handles:
-    hook.remove()
-
 # search best threshold
 step = 100
 best_F1 = 0
@@ -202,3 +182,7 @@ for thres in np.linspace(0, 1, step+1)[1:-1].tolist():
         best_thres = thres
 F1, P, R = compute_F1(pred_logits.clone(), label_vectors.clone(),  mode_F1='overall', k_val=best_thres, use_relative=True)
 print(f"best threshold: {best_thres:.2f}, F1: {F1:.6f}, Precision: {P:.6f}, Recall: {R:.6f}\n")
+
+# clear hooks
+for hook in hook_handles:
+    hook.remove()

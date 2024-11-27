@@ -1,5 +1,4 @@
 # coding=utf-8
-# author: Ziyang Zhou
 import argparse
 import clip_surgery as clip
 import numpy as np
@@ -10,9 +9,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 BICUBIC = InterpolationMode.BICUBIC
 
-from utils import evaluation, compute_F1
-from dataloader import NumpyDataset
-from clip_text import class_names_voc, BACKGROUND_CATEGORY_VOC, class_names_coco, BACKGROUND_CATEGORY_COCO
+from utils import get_test_dataset, get_class_names, evaluation, compute_F1
 
 """
 Example:
@@ -28,32 +25,16 @@ args = parser.parse_args()
 print(args)
 device = torch.device("cuda:0")
 
-# data path
-if args.dataset == "voc2012":
-    img_root = "datasets/voc2012/VOCdevkit/VOC2012/JPEGImages"
-    image_file = "imageset/voc2012/formatted_val_images.npy"
-    full_label_file = "imageset/voc2012/formatted_val_labels.npy"
-    class_names = class_names_voc
-    NUM_CLASSES = len(class_names_voc)
-elif args.dataset == "coco2014":
-    img_root = "datasets/coco2014"
-    image_file = "imageset/coco2014/formatted_val_images.npy"
-    full_label_file = "imageset/coco2014/formatted_val_labels.npy"
-    class_names = class_names_coco
-    NUM_CLASSES = len(class_names_coco)
-else:
-    raise NotImplementedError
-
-image_list = np.load(image_file)
-full_label_list = np.load(full_label_file)
-print("Dataset:", args.dataset)
-print("The number of classes in dataset:", NUM_CLASSES)
-print("The number of classes in vocabulary:", len(class_names))
-
 # model
 patch_size = 16
 model, _ = clip.load("CS-ViT-B/16", device=device)
 model.eval()
+
+# get class names
+class_names, NUM_CLASSES = get_class_names(args.dataset)
+print("Dataset:", args.dataset)
+print("The number of classes in dataset:", NUM_CLASSES)
+print("The number of classes in vocabulary:", len(class_names))
 
 # classifier weights
 with torch.no_grad():
@@ -67,7 +48,7 @@ preprocess = transforms.Compose([
     transforms.ToTensor(), 
     transforms.Normalize((0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711))
 ])
-dataset = NumpyDataset(img_root, image_list, full_label_list, transform=preprocess)
+dataset = get_test_dataset(args.dataset, transform=preprocess)
 dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
 
 # inference
