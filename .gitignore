@@ -173,3 +173,5 @@ cython_debug/
 # file to ignore
 /*.ipynb
 /*.sh
+/*.out
+/*.log
