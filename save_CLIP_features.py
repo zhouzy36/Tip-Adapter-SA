@@ -9,27 +9,33 @@ from collections import OrderedDict
 from tqdm import tqdm
 
 from dataset import ResizeToPatchSizeDivisible
-from utils import get_test_dataset, get_class_names, evaluation
+from utils import get_test_dataset, get_class_names, get_split_dataset, evaluation
 
 """
 Example:
-python save_CLIP_features.py features/voc2012/CLIP/val_all.pt --dataset voc2012
-python save_CLIP_features.py features/coco2014/CLIP/val_all.pt --dataset coco2014
+python save_CLIP_features.py --dataset voc2012 features/voc2012/CLIP/val_all.pt
+python save_CLIP_features.py --dataset coco2014 features/coco2014/CLIP/val_all.pt
+
+python save_CLIP_features.py --dataset voc2012 --split-file splits/voc2012/exp1/1shots_filtered.txt features/voc2012/CLIP/exp1_1shots_filtered.pt
+python save_CLIP_features.py --dataset coco2014 --split-file splits/voc2012/exp1/1shots_filtered.txt features/coco2014/CLIP/exp1_1shots_filtered.pt
 """
 
 # parse arguments
-parser = argparse.ArgumentParser(description="Save CLIP features of test images.")
+parser = argparse.ArgumentParser(description="Save CLIP features.")
 parser.add_argument("output_path", type=str, help="The output path.")
+parser.add_argument("--split-file", type=str, help="The path to split file.")
 parser.add_argument("--dataset", type=str, choices=["voc2012", "coco2014"], default="coco2014")
 parser.add_argument("--keep-resolution", action="store_true", help="Keep image original resolution if set.")
 args = parser.parse_args()
 print(args)
 device = torch.device("cuda:0")
 
-# check the existence of the output path
+# check the existence of the file path
 output_dir = os.path.dirname(args.output_path)
 if output_dir and not os.path.exists(output_dir):
     os.makedirs(output_dir)
+
+assert not args.split_file or os.path.exists(args.split_file)
 
 # model
 model_path = "pretrained_models/ViT-B-16.pt"
@@ -56,11 +62,17 @@ if args.keep_resolution:
         transforms.ToTensor(),
         transforms.Normalize((0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711)),
     ])
-    dataset = get_test_dataset(args.dataset, transform=transform)
+    if args.split_file:
+        dataset = get_split_dataset(args.dataset, args.split_file, transform=transform)
+    else:
+        dataset = get_test_dataset(args.dataset, transform=transform)
     dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
 else:
     # 224*224
-    dataset = get_test_dataset(args.dataset, transform=preprocess)
+    if args.split_file:
+        dataset = get_split_dataset(args.dataset, args.split_file, transform=preprocess)
+    else:
+        dataset = get_test_dataset(args.dataset, transform=preprocess)
     dataloader = DataLoader(dataset, batch_size=128, shuffle=False)
 
 # data to save
@@ -99,5 +111,6 @@ data["labels"] = all_label_vectors
 torch.save(data, args.output_path)
 print(f"Save features to {args.output_path}")
 
-# verify zero shot logits
-_ = evaluation(all_zeroshot_logits, all_label_vectors)
+# verify zero shot logits when extract features of test image
+if not args.split_file:
+    _ = evaluation(all_zeroshot_logits, all_label_vectors)
