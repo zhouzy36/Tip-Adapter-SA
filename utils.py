@@ -4,6 +4,7 @@ import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 import random
+import os
 import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset
@@ -15,7 +16,7 @@ from typing import Optional, List
 BICUBIC = InterpolationMode.BICUBIC
 _CONTOUR_INDEX = 1 if cv2.__version__.split('.')[0] == '3' else 0
 
-from dataset import NumpyDataset
+from dataset import NumpyDataset, TxtDataset
 from clip_text import class_names_voc, BACKGROUND_CATEGORY_VOC, class_names_coco, BACKGROUND_CATEGORY_COCO
 
 
@@ -277,31 +278,6 @@ def setup_seed(seed: int):
     torch.backends.cudnn.deterministic = True  # cudnn
 
 
-def get_test_dataset(dataset: str, transform=None):
-    """Get pytorch dataset according to the dataset name.
-    Args:
-        dataset (str): Dataset name.
-        transform: Data transformation.
-    Returns:
-        test_dataset (torch.Dataset): Test dataset.
-    """
-    # data path
-    if dataset == "voc2012":
-        img_root = "datasets/voc2012/VOCdevkit/VOC2012/JPEGImages"
-        image_file = "imageset/voc2012/formatted_val_images.npy"
-        full_label_file = "imageset/voc2012/formatted_val_labels.npy"
-    elif dataset == "coco2014":
-        img_root = "datasets/coco2014"
-        image_file = "imageset/coco2014/formatted_val_images.npy"
-        full_label_file = "imageset/coco2014/formatted_val_labels.npy"
-    else:
-        raise NotImplementedError
-    image_list = np.load(image_file)
-    full_label_list = np.load(full_label_file)
-    test_dataset = NumpyDataset(img_root, image_list, full_label_list, transform=transform)
-    return test_dataset
-
-
 def get_class_names(dataset: str, include_background: bool = False):
     """Get class names according to the dataset name.
     Args:
@@ -320,3 +296,53 @@ def get_class_names(dataset: str, include_background: bool = False):
     else:
         raise NotImplementedError
     return class_names, num_classes
+
+
+def get_test_dataset(dataset: str, transform=None, one_hot_label: bool = True):
+    """Get pytorch-style test dataset according to the dataset name.
+    Args:
+        dataset (str): Dataset name.
+        transform: Data transformation (default: None).
+        one_hot_label (bool): Use one-hot label if set (default: True).
+    Returns:
+        test_dataset (Dataset): Pytorch-style dataset.
+    """
+    if dataset == "voc2012":
+        img_root = "datasets/voc2012/VOCdevkit/VOC2012/JPEGImages"
+        image_file = "imageset/voc2012/formatted_val_images.npy"
+        full_label_file = "imageset/voc2012/formatted_val_labels.npy"
+    elif dataset == "coco2014":
+        img_root = "datasets/coco2014"
+        image_file = "imageset/coco2014/formatted_val_images.npy"
+        full_label_file = "imageset/coco2014/formatted_val_labels.npy"
+    else:
+        raise NotImplementedError
+    image_list = np.load(image_file)
+    full_label_list = np.load(full_label_file)
+    test_dataset = NumpyDataset(img_root, image_list, full_label_list, transform=transform, one_hot_label=one_hot_label)
+    return test_dataset
+
+
+def get_split_dataset(dataset: str, split_file: str, transform=None, one_hot_label: bool = True):
+    """Get pytorch-style dataset according to the txt split file.
+    Args:
+        dataset (str): Dataset name.
+        split_file (str): The path to txt split file
+        transform: Data transformation (default: None).
+        one_hot_label (bool): Use one-hot label if set (default: True).
+    Returns:
+        dataset (Dataset): Pytorch-style dataset.
+    """
+    assert os.path.exists(split_file)
+    if dataset == "voc2012":
+        img_root = "datasets/voc2012/VOCdevkit/VOC2012/JPEGImages"
+    elif dataset == "coco2014":
+        img_root = "datasets/coco2014"
+    else:
+        raise NotImplementedError
+    file_list = tuple(open(split_file, "r"))
+    file_list = [id_.rstrip().split(" ") for id_ in file_list]
+    image_list = [x[0] for x in file_list]
+    label_list = [x[1:] for x in file_list]
+    dataset = TxtDataset(dataset, img_root, image_list, label_list, transform=transform, one_hot_label=one_hot_label)
+    return dataset
