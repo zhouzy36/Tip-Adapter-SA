@@ -13,11 +13,11 @@ from utils import get_test_dataset, get_class_names, get_split_dataset, evaluati
 
 """
 Example:
-python save_CLIP_features.py --dataset voc2012 features/voc2012/CLIP/val_all.pt
 python save_CLIP_features.py --dataset coco2014 features/coco2014/CLIP/val_all.pt
+python save_CLIP_features.py --dataset voc2012 features/voc2012/CLIP/val_all.pt
 
+python save_CLIP_features.py --dataset coco2014 --split-file splits/coco2014/exp1/1shots_filtered.txt features/coco2014/CLIP/exp1_1shots_filtered.pt
 python save_CLIP_features.py --dataset voc2012 --split-file splits/voc2012/exp1/1shots_filtered.txt features/voc2012/CLIP/exp1_1shots_filtered.pt
-python save_CLIP_features.py --dataset coco2014 --split-file splits/voc2012/exp1/1shots_filtered.txt features/coco2014/CLIP/exp1_1shots_filtered.pt
 """
 
 # parse arguments
@@ -85,14 +85,14 @@ print("Start extracting features.")
 with torch.no_grad():
     for image, label in tqdm(dataloader):
         image = image.to(device)
-        h, w = image.shape[-2:]
         # forward
+        h, w = image.shape[-2:]
         image_features = model.encode_image(image, h, w)
         all_features.append(image_features.cpu())
         # classify
         image_features = image_features / image_features.norm(dim=1, keepdim=True)
         logits = logit_scale * image_features @ text_features.t()
-        logits = logits[:, :NUM_CLASSES].softmax(dim=1)
+        logits = logits[:, :NUM_CLASSES].softmax(dim=1) # [bs, num_classes]
         # save logits and labels for evaluation
         all_label_vectors.append(label)
         all_zeroshot_logits.append(logits.cpu())

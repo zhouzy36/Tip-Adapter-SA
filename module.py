@@ -150,7 +150,7 @@ def double_mask_attention_refine(logits: torch.Tensor,
     Returns:
         refined_logits (Tensor): The refined logits with the same size as input logits.
     """
-    assert len(logits.shape) == 2, "The expected input size of logits is [L, C]"
+    assert logits.dim() == 2, "The expected input size of logits is [L, C]"
 
     coarse_logits = logits.clone()
     attn_weights = torch.stack(attn_weight_list[:-1], dim=1).squeeze(0) # [11, L+1, L+1]
@@ -254,21 +254,28 @@ def my_double_mask_attention_refine(logits: torch.Tensor,
     return refined_logits
 
 
-def extract_class_specific_features(patch_feats: torch.Tensor, logits: torch.Tensor, labels: torch.Tensor):
+def extract_class_specific_features(patch_feats: torch.Tensor, 
+                                    logits: torch.Tensor, 
+                                    label: torch.Tensor, 
+                                    one_hot_label: bool = True):
     """Extract class specific features by averaging class specific patch features.
     Args:
         patch_feats (Tensor): The patch features with size [L, D].
         logits (Tensor): The refined patch classification logtis with size [L, C].
-        labels (Tensor): The label tensor with size [1, num_labels].
-        
+        labels (Tensor): One hot label vector with size [1, num_classes] or label tensor with size [1, num_labels].
+        one_hot_label (bool): Indicate that the label is a one-hot label (default: True).
     Retuens:
         class_specific_features (Tensor): Features with size [num_labels, D].
     """
     assert patch_feats.dim() == 2 and logits.dim() == 2
     assert patch_feats.shape[0] == logits.shape[0]
-    class_specific_features = torch.empty([labels.shape[-1], patch_feats.shape[-1]]).to(patch_feats.device)
 
-    for i, ccls in enumerate(labels.flatten().tolist()):
+    if one_hot_label:
+        label = torch.nonzero(label, as_tuple=True)[1].unsqueeze(0)
+
+    class_specific_features = torch.empty([label.shape[-1], patch_feats.shape[-1]]).to(patch_feats.device)
+
+    for i, ccls in enumerate(label.flatten().tolist()):
         temp_logits = logits[:,ccls]
         temp_logits = temp_logits - temp_logits.min()
         temp_logits = temp_logits / temp_logits.max()
