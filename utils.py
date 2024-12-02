@@ -5,19 +5,22 @@ import matplotlib.pyplot as plt
 import numpy as np
 import random
 import os
+import pandas as pd
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset
 import torchvision
 import torchvision.transforms as transforms
 from torchvision.transforms import Compose, Resize, ToTensor, Normalize
 from torchvision.transforms import InterpolationMode
-from typing import Optional, List
+from typing import Optional, List, Any, Union
 BICUBIC = InterpolationMode.BICUBIC
 _CONTOUR_INDEX = 1 if cv2.__version__.split('.')[0] == '3' else 0
 
 from dataset import NumpyDataset, TxtDataset
 from clip_text import class_names_voc, BACKGROUND_CATEGORY_VOC, class_names_coco, BACKGROUND_CATEGORY_COCO
+from loss import IULoss, ANLoss, WANLoss
 
 
 def scoremap2bbox(scoremap, threshold, multi_contour_eval=False):
@@ -160,10 +163,10 @@ def evaluation(predictions, labels, thres_abs=0.5, verbose=True):
     F1, P, R = compute_F1(predictions.clone(), labels.clone(),  mode_F1='overall', k_val=thres_abs, use_relative=True)
 
     if verbose:
-        print('================================================')
-        print('mAP: %.6f' % torch.mean(ap))
-        print('F1: %.6f, Precision: %.6f, Recall: %.6f' % (F1, P, R))
-        print('================================================')
+        print("================================================")
+        print(f"mAP: {torch.mean(ap):.6f}")
+        print(f"F1: {F1:.6f}, Precision: {P:.6f}, Recall: {R:.6f}")
+        print("================================================")
 
     return ap, F1, P, R
 
@@ -346,3 +349,39 @@ def get_split_dataset(dataset: str, split_file: str, transform=None, one_hot_lab
     label_list = [x[1:] for x in file_list]
     dataset = TxtDataset(dataset, img_root, image_list, label_list, transform=transform, one_hot_label=one_hot_label)
     return dataset
+
+
+def load_results(path: str) -> list:
+    """Load results from specified path.
+    Args:
+        path (str): The csv file path to save the results.
+    Returns:
+        df (dict): Result data.
+    """
+    if os.path.exists(path):
+        try:
+            df = pd.read_csv(path)
+            return df.to_dict(orient='records')
+        except Exception as e:
+            print(f"Error loading data from {path}: {e}")
+            return []
+    else:
+        print(f"File {path} does not exist.")
+        return []
+
+
+def write_results(data: list, path: str):
+    """Write results to specified path.
+    Args:
+        data (dict): Result data.
+        path (str): The csv file path to save the results.
+    """
+    root_path = os.path.dirname(path)
+    if not os.path.exists(root_path):
+        os.makedirs(root_path)
+    try:
+        df = pd.DataFrame(data)
+        df.to_csv(path, index=False)
+        print(f"Successfully saved data to {path}.")
+    except Exception as e:
+        print(f"Error saving data to {path}: {e}")

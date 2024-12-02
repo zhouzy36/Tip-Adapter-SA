@@ -31,6 +31,7 @@ class NumpyDataset(Dataset):
                  label_list: np.array, 
                  transform=None, 
                  one_hot_label: bool=True):
+        assert os.path.exists(img_root)
         self.img_root = img_root
         self.file_paths = file_paths
         self.label_list = label_list
@@ -92,6 +93,7 @@ class TxtDataset(Dataset):
                  label_list: List, 
                  transform=None, 
                  one_hot_label: bool=True):
+        assert os.path.exists(img_root)
         self.img_root = img_root
         self.file_paths = file_paths
         self.label_list = label_list
@@ -131,14 +133,40 @@ class TxtDataset(Dataset):
 
 
 
+class FeatDataset(Dataset):
+    def __init__(self, data_path: str):
+        assert os.path.exists(data_path)
+        data = torch.load(data_path, map_location=torch.device("cpu"))
+        self.feats = data["feats"]
+        self.labels = data["labels"]
+        self.logits = data["logits"]
+        self.feat_dim = self.feats.shape[-1]
+
+    def __len__(self):
+        return self.feats.shape[0]
+    
+    def __getitem__(self, idx):
+        return self.feats[idx], self.labels[idx], self.logits[idx]
+    
+    def get_all_labels(self):
+        return self.labels
+    
+    def get_all_logits(self):
+        return self.logits
+    
+    def get_all_features(self):
+        return self.feats
+
+
+
 if __name__ == "__main__":
     # NumpyDataset example
     img_root = "datasets/voc2012/VOCdevkit/VOC2012/JPEGImages"
     image_file = "imageset/voc2012/formatted_train_images.npy"
     full_label_file = "imageset/voc2012/formatted_train_labels.npy"
     image_list = np.load(image_file)
-    full_label_list = np.load(full_label_file)
-    dataset = NumpyDataset(img_root, image_list, full_label_list)
+    label_list = np.load(full_label_file)
+    dataset = NumpyDataset(img_root, image_list, label_list)
 
     # TxtDataset example
     img_root = "datasets/voc2012/VOCdevkit/VOC2012/JPEGImages"
@@ -147,3 +175,7 @@ if __name__ == "__main__":
     image_list = [x[0] for x in file_list]
     label_list = [x[1:] for x in file_list]
     dataset = TxtDataset("voc2012", img_root, image_list, label_list)
+
+    # FeatDataset example
+    data_path = "features/voc2012/CLIP/val_all.pt"
+    dataset = FeatDataset(data_path)
