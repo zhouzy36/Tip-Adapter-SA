@@ -366,7 +366,7 @@ def load_results(path: str) -> list:
             print(f"Error loading data from {path}: {e}")
             return []
     else:
-        print(f"File {path} does not exist.")
+        print(f"File {path} does not exist. Return empty list.")
         return []
 
 
@@ -385,3 +385,14 @@ def write_results(data: list, path: str):
         print(f"Successfully saved data to {path}.")
     except Exception as e:
         print(f"Error saving data to {path}: {e}")
+
+
+def append_results(data: Union[dict, list], path: str):
+    """Append results to specified path.
+    Args:
+        data (dict): Result data.
+        path (str): The csv file path to save the results.
+    """
+    result_data = load_results(path)
+    result_data.append(data) if isinstance(data, dict) else result_data.extend(data)
+    write_results(result_data, path)
