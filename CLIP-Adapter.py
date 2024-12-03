@@ -1,3 +1,4 @@
+# coding=utf-8
 import argparse
 import clip
 import os
@@ -13,8 +14,26 @@ from utils import get_class_names, evaluation, append_results, setup_seed
 from loss import IULoss, ANLoss, WANLoss
 
 
-def train_loop(dataloader, model, loss_fn, optimizer):
-    model.train()
+class Adapter(nn.Module):
+    def __init__(self, feat_dim, reduction=2, ratio=0.2) -> None:
+        super(Adapter, self).__init__()
+        self.fc = nn.Sequential(
+            nn.Linear(feat_dim, feat_dim // reduction, bias=False),
+            nn.ReLU(),
+            nn.Linear(feat_dim // reduction, feat_dim, bias=False),
+            nn.ReLU()
+        )
+        self.ratio = ratio
+
+    def forward(self, x):
+        out = self.fc(x)
+        out = self.ratio * out + (1 - self.ratio) * x
+        return out
+
+
+def train_loop(dataloader, adapter, loss_fn, optimizer):
+    global logit_scale, text_features
+    adapter.train()
     num_batches = len(dataloader)
     train_loss = 0.
 
@@ -24,7 +43,8 @@ def train_loop(dataloader, model, loss_fn, optimizer):
         y = y.to(device)
 
         # Compute prediction and loss
-        pred = model(X)
+        adapted_features = adapter(X)
+        pred = logit_scale * adapted_features @ text_features.t()
         loss = loss_fn(pred, y)
 
         # Backpropagation
@@ -40,8 +60,8 @@ def train_loop(dataloader, model, loss_fn, optimizer):
     return train_loss
 
 
-def test_loop(dataloader, model, loss_fn):
-    model.eval()
+def test_loop(dataloader, adapter, loss_fn):
+    adapter.eval()
     num_batches = len(dataloader)
     test_loss = 0.
     pred_logits = []
@@ -50,7 +70,8 @@ def test_loop(dataloader, model, loss_fn):
         for X, y, _ in dataloader:
             X = X.to(device)
             y = y.to(device)
-            pred = model(X)
+            adapted_features = adapter(X)
+            pred = logit_scale * adapted_features @ text_features.t()
             loss = loss_fn(pred, y)
             test_loss += loss.item()
             pred_logits.append(F.sigmoid(pred).detach().cpu())
@@ -65,10 +86,14 @@ def test_loop(dataloader, model, loss_fn):
 
 def parse_args():
     # define arguments
-    parser = argparse.ArgumentParser(description="Linear-probe CLIP: Train linear classifier using training data features.")
+    parser = argparse.ArgumentParser(description="CLIP-Adapter: Fine-tuning lightweight adapters with residual connections.")
     parser.add_argument("--train-data-path", type=str, required=True, help="The path to training features.")
     parser.add_argument("--test-data-path", type=str, required=True, help="The path to test features.")
     parser.add_argument("--dataset", type=str, choices=["voc2012", "coco2014"], default="coco2014", help="Experimental dataset (default: voc2012).")
+
+    # model parameters
+    parser.add_argument("--reduction", type=int, default=4, help="The dimensionality reduction ratio of adapter hidden layer (default: 4). ")
+    parser.add_argument("--alpha", type=float, default=0.2, help="The residual ratio of adapter  (default: 0.2).")
     
     # loss
     parser.add_argument("--loss", type=str, choices=["CE", "IU", "AN", "WAN", "AN-LS"], default="CE", help="Loss type (default: CE).")
@@ -103,19 +128,19 @@ def parse_args():
 if __name__ == "__main__":
     # set up random seed
     setup_seed()
-
-    # initialize device
-    device = torch.device("cuda:0")
-
+    
     # parse arguments
     args = parse_args()
+    
+    # initialize device
+    device = torch.device("cuda:0")
     
     # initialize tensorboard writer
     writer = None
     if args.tensorboard:
         log_dir = os.path.join(args.log_root, # log root path
                                args.dataset, # dataset 
-                               "CLIP-LP", # method
+                               "CLIP-Adapter", # method
                                os.path.basename(args.train_data_path).split(".")[0], # traing data
                                f"{args.loss}_bs{args.batch_size}_lr{args.lr}_wd{args.weight_decay}_ep{args.num_epochs}") # hyperparameters
         writer = SummaryWriter(log_dir)
@@ -155,9 +180,9 @@ if __name__ == "__main__":
                                  num_workers=args.num_workers, 
                                  pin_memory=args.pin_memory)
 
-    # define linear classifier
-    classifier = nn.Sequential(nn.Linear(feat_dim, NUM_CLASSES))
-    classifier = classifier.to(device)
+    # define visual adapter
+    visual_adapter = Adapter(feat_dim, reduction=args.reduction, ratio=args.alpha)
+    visual_adapter = visual_adapter.to(device)
 
     # get loss function
     if args.loss == "CE":
@@ -174,7 +199,7 @@ if __name__ == "__main__":
         raise NotImplementedError
 
     # optimizer
-    optimizer = torch.optim.AdamW(classifier.parameters(), lr=args.lr, eps=1e-4, weight_decay=args.weight_decay)
+    optimizer = torch.optim.AdamW(visual_adapter.parameters(), lr=args.lr, eps=1e-4, weight_decay=args.weight_decay)
 
     # learning rate scheduler
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.num_epochs)
@@ -189,7 +214,7 @@ if __name__ == "__main__":
     # train
     print("Start training.")
     for epoch in tqdm(range(args.num_epochs)):
-        train_loss = train_loop(train_dataloader, classifier, loss_fn, optimizer)
+        train_loss = train_loop(train_dataloader, visual_adapter, loss_fn, optimizer)
         if writer:
             writer.add_scalar("lr", lr_scheduler.get_last_lr()[0], epoch+1)
             writer.add_scalar("Loss/train", train_loss, epoch+1)
@@ -197,7 +222,7 @@ if __name__ == "__main__":
 
         # test
         if (epoch + 1) % args.test_interval == 0:
-            test_loss, ap, F1, P, R = test_loop(test_dataloader, classifier, loss_fn)
+            test_loss, ap, F1, P, R = test_loop(test_dataloader, visual_adapter, loss_fn)
             mAP = torch.mean(ap)
             # print("================================================")
             # print(f"[{epoch+1}/{args.num_epochs}] test loss: {test_loss:.6f}")
@@ -228,7 +253,7 @@ if __name__ == "__main__":
                 break
 
     # final test
-    test_loss, ap, F1, P, R = test_loop(test_dataloader, classifier, loss_fn)
+    test_loss, ap, F1, P, R = test_loop(test_dataloader, visual_adapter, loss_fn)
     print("================================================")
     print(f"[{epoch+1}/{args.num_epochs}] test loss: {test_loss:.6f}")
     print(f"mAP: {torch.mean(ap):.6f}, F1: {F1:.6f}, Precision: {P:.6f}, Recall: {R:.6f}")
@@ -254,7 +279,9 @@ if __name__ == "__main__":
 
     # save results
     if args.save_results:
-        result_data = {"loss": args.loss, 
+        result_data = {"reduction": args.reduction,
+                       "alpha": args.alpha,
+                       "loss": args.loss, 
                        "batch_size": args.batch_size, 
                        "lr": args.lr, 
                        "weight_decay": args.weight_decay, 
@@ -264,5 +291,8 @@ if __name__ == "__main__":
                        "best_mAP_epoch": best_mAP_epoch,
                        "best_F1_epoch": best_F1_epoch}
         print(result_data)
-        result_path = os.path.join(args.result_root, args.dataset, "CLIP-LP", os.path.basename(args.train_data_path).split(".")[0]+".csv")
+        result_path = os.path.join(args.result_root, 
+                                   args.dataset, 
+                                   "CLIP-Adapter", 
+                                   os.path.basename(args.train_data_path).split(".")[0]+".csv")
         append_results(result_data, result_path)

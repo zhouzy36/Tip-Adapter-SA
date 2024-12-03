@@ -143,7 +143,7 @@ def compute_F1(predictions, labels, mode_F1, k_val, use_relative=False):
 # new added
 
 def evaluation(predictions, labels, thres_abs=0.5, verbose=True):
-    """
+    """Evaluate: compute AP, F1 scores, precision and recall.
     Args:
         predictions (tensor): classification logit with size [num_samples, num_classes],
         labels (tensor): label vector {0, 1}^{num_classes} with size [num_samples, num_classes].
@@ -172,7 +172,7 @@ def evaluation(predictions, labels, thres_abs=0.5, verbose=True):
 
 
 def topk_acc(output: torch.Tensor, target: torch.Tensor, k: int = 1):
-    """Compute batch mean top-k accuracy
+    """Compute batch mean top-k accuracy.
     Args:
         output (Tensor): model prediction with size [N, C]
         target (Tensor): ground truth with size [N]
@@ -192,7 +192,7 @@ def patch_classify(image_features: torch.Tensor,
                    logit_scale: torch.Tensor = 100., 
                    drop_first: bool = True, 
                    use_softmax: bool = True):
-    """Perform patch classify (this function will normalize image features)
+    """Perform patch classify (this function will normalize image features).
     Args:
         image_features (Tensor): CLIP image features with size. [N, L, D]
         text_features (Tensor): CLIP text features with size. [C, D]
@@ -216,7 +216,7 @@ def upsample_logits(logits:torch.Tensor,
                     output_size: Optional[int],
                     patch_size: int,
                     mode: str = "bilinear"):
-    """Upsample patch-level classification logits
+    """Upsample patch-level classification logits.
     Args:
         logits (Tensor): logits to sampled with size [N, L, C] or [L, C].
         input_size: input spatial size.
@@ -269,16 +269,18 @@ def post_process(model: clip.model.CLIP, x: torch.Tensor, batch_first: bool = Fa
     return out
 
 
-def setup_seed(seed: int):
-    """Set up random seed
+def setup_seed(seed: int = 2024):
+    """Set up random seed.
     Args:
         seed (int): Random seed value.
     """
-    torch.manual_seed(seed)  # CPU
-    torch.cuda.manual_seed_all(seed)  # GPU
-    np.random.seed(seed)  # numpy
-    random.seed(seed)  # random and transforms
-    torch.backends.cudnn.deterministic = True  # cudnn
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 
 def get_class_names(dataset: str, include_background: bool = False):
