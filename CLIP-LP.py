@@ -57,39 +57,56 @@ def test_loop(dataloader, model, loss_fn):
     return test_loss, ap, F1, P, R
 
 
-
-if __name__ == "__main__":
+def parse_args():
     # define arguments
     parser = argparse.ArgumentParser(description="Linear-probe CLIP: Train linear classifier using training data features.")
     parser.add_argument("--train-data-path", type=str, required=True, help="The path to training features.")
     parser.add_argument("--test-data-path", type=str, required=True, help="The path to test features.")
     parser.add_argument("--dataset", type=str, choices=["voc2012", "coco2014"], default="coco2014", help="Experimental dataset (default: voc2012).")
+    
     # loss
     parser.add_argument("--loss", type=str, choices=["CE", "IU", "AN", "WAN", "AN-LS"], default="CE", help="Loss type (default: CE).")
+    
     # training parameters
-    parser.add_argument("--batch-size", type=int, default=8)
+    parser.add_argument("--batch-size", type=int, default=8, help="Training batch size (default: 8).")
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--pin-memory", action="store_true")
     parser.add_argument("--lr", type=float, default=0.1)
     parser.add_argument("--weight-decay", type=float, default=0.01)
     parser.add_argument("--num-epochs", type=int, default=50)
-    # others
+    
+    # early stop
     parser.add_argument("--test-interval", type=int, default=5, help="Test model every 'test-interval' epochs (default: 5).")
     parser.add_argument("--patience", type=int, default=2, help="Stop training if the model does not improve for more than 'patience' test intervals (default: 2).")
+    
+    # tensorboard
     parser.add_argument("--tensorboard", action="store_true", help="Enable tensorboard if set.")
+    parser.add_argument("--log-root", type=str, default="runs", help="The root path to save tensorboard logs (default: runs).")
+    
+    # save results
     parser.add_argument("--save-results", action="store_true", help="Save experiment results if set.")
-    # parse arguments
+    parser.add_argument("--result-root", type=str, default="results", help="The root path to save results (default: results).")
+
+    # parse args
     args = parser.parse_args()
     print(args)
-    device = torch.device("cuda:0")
+    return args
 
+
+
+if __name__ == "__main__":
+    # parse arguments
+    args = parse_args()
+    device = torch.device("cuda:0")
+    
+    # initialize tensorboard writer
     writer = None
     if args.tensorboard:
-        log_dir = os.path.join("runs", # log root path
+        log_dir = os.path.join(args.log_root, # log root path
                                args.dataset, # dataset 
                                "CLIP-LP", # method
                                os.path.basename(args.train_data_path).split(".")[0], # traing data
-                               f"{args.loss}_bs{args.batch_size}_lr{args.lr}_wd{args.weight_decay}") # hyperparameters
+                               f"{args.loss}_bs{args.batch_size}_lr{args.lr}_wd{args.weight_decay}_ep{args.num_epochs}") # hyperparameters
         writer = SummaryWriter(log_dir)
 
     # load CLIP model
@@ -122,7 +139,7 @@ if __name__ == "__main__":
     # test loader
     test_dataset = FeatDataset(args.test_data_path)
     test_dataloader = DataLoader(test_dataset, 
-                                 batch_size=args.batch_size, 
+                                 batch_size=256, 
                                  shuffle=False, 
                                  num_workers=args.num_workers, 
                                  pin_memory=args.pin_memory)
@@ -130,7 +147,7 @@ if __name__ == "__main__":
     # define linear classifier
     classifier = nn.Sequential(nn.Linear(feat_dim, NUM_CLASSES))
 
-    # get loss function gamma=1/(NUM_CLASSES-1)
+    # get loss function
     if args.loss == "CE":
         loss_fn = nn.CrossEntropyLoss()
     elif args.loss == "IU":
@@ -170,10 +187,10 @@ if __name__ == "__main__":
         if (epoch + 1) % args.test_interval == 0:
             test_loss, ap, F1, P, R = test_loop(test_dataloader, classifier, loss_fn)
             mAP = torch.mean(ap)
-            print("================================================")
-            print(f"[{epoch+1}/{args.num_epochs}] test loss: {test_loss:.6f}")
-            print(f"mAP: {mAP:.6f}, F1: {F1:.6f}, Precision: {P:.6f}, Recall: {R:.6f}")
-            print("================================================")
+            # print("================================================")
+            # print(f"[{epoch+1}/{args.num_epochs}] test loss: {test_loss:.6f}")
+            # print(f"mAP: {mAP:.6f}, F1: {F1:.6f}, Precision: {P:.6f}, Recall: {R:.6f}")
+            # print("================================================")
             if writer:
                 writer.add_scalar("Loss/test", test_loss, epoch+1)
                 writer.add_scalar("mAP", mAP, epoch+1)
@@ -230,10 +247,10 @@ if __name__ == "__main__":
                        "lr": args.lr, 
                        "weight_decay": args.weight_decay, 
                        "num_epochs": args.num_epochs, 
-                       "best_mAP": best_mAP, 
-                       "best_F1": best_F1, 
+                       "best_mAP": best_mAP.item(), 
+                       "best_F1": best_F1.item(), 
                        "best_mAP_epoch": best_mAP_epoch,
                        "best_F1_epoch": best_F1_epoch}
         print(result_data)
-        result_path = os.path.join("results", args.dataset, "CLIP-LP", os.path.basename(args.train_data_path).split(".")[0]+".csv")
+        result_path = os.path.join(args.result_root, args.dataset, "CLIP-LP", os.path.basename(args.train_data_path).split(".")[0]+".csv")
         append_results(result_data, result_path)
