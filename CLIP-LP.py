@@ -19,6 +19,10 @@ def train_loop(dataloader, model, loss_fn, optimizer):
     train_loss = 0.
 
     for X, y, _ in dataloader:
+        # move data to device
+        X = X.to(device)
+        y = y.to(device)
+
         # Compute prediction and loss
         pred = model(X)
         loss = loss_fn(pred, y)
@@ -44,11 +48,13 @@ def test_loop(dataloader, model, loss_fn):
     label_vectors = []
     with torch.no_grad():
         for X, y, _ in dataloader:
+            X = X.to(device)
+            y = y.to(device)
             pred = model(X)
             loss = loss_fn(pred, y)
             test_loss += loss.item()
             pred_logits.append(F.sigmoid(pred).detach().cpu())
-            label_vectors.append(y)
+            label_vectors.append(y.detach().cpu())
     test_loss /= num_batches
     # evaluate
     pred_logits = torch.cat(pred_logits, dim=0)
@@ -68,10 +74,10 @@ def parse_args():
     parser.add_argument("--loss", type=str, choices=["CE", "IU", "AN", "WAN", "AN-LS"], default="CE", help="Loss type (default: CE).")
     
     # training parameters
-    parser.add_argument("--batch-size", type=int, default=8, help="Training batch size (default: 8).")
+    parser.add_argument("--batch-size", type=int, default=16, help="Training batch size (default: 16).")
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--pin-memory", action="store_true")
-    parser.add_argument("--lr", type=float, default=0.1)
+    parser.add_argument("--lr", type=float, default=0.01)
     parser.add_argument("--weight-decay", type=float, default=0.01)
     parser.add_argument("--num-epochs", type=int, default=50)
     
@@ -146,6 +152,7 @@ if __name__ == "__main__":
 
     # define linear classifier
     classifier = nn.Sequential(nn.Linear(feat_dim, NUM_CLASSES))
+    classifier = classifier.to(device)
 
     # get loss function
     if args.loss == "CE":
