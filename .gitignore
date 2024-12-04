@@ -169,6 +169,11 @@ cython_debug/
 /notebooks/
 /pretrained_models/
 /sample/
+/features/
+/caches/
+/runs/
+/results/
+/scripts/
 
 # file to ignore
 /*.ipynb
