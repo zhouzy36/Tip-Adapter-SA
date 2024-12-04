@@ -55,7 +55,7 @@ if args.keep_resolution:
 else:
     # 224*224
     dataset = get_test_dataset(args.dataset, transform=preprocess)
-    dataloader = DataLoader(dataset, batch_size=64, shuffle=False)
+    dataloader = DataLoader(dataset, batch_size=256, shuffle=False)
 
 # inference
 pred_logits = []

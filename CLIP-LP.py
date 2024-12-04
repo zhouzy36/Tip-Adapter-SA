@@ -1,3 +1,4 @@
+# coding=utf-8
 import argparse
 import clip
 import os
@@ -174,7 +175,7 @@ if __name__ == "__main__":
         raise NotImplementedError
 
     # optimizer
-    optimizer = torch.optim.AdamW(classifier.parameters(), lr=args.lr, eps=1e-4, weight_decay=args.weight_decay)
+    optimizer = torch.optim.AdamW(classifier.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
     # learning rate scheduler
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.num_epochs)
@@ -199,16 +200,17 @@ if __name__ == "__main__":
         if (epoch + 1) % args.test_interval == 0:
             test_loss, ap, F1, P, R = test_loop(test_dataloader, classifier, loss_fn)
             mAP = torch.mean(ap)
-            # print("================================================")
-            # print(f"[{epoch+1}/{args.num_epochs}] test loss: {test_loss:.6f}")
-            # print(f"mAP: {mAP:.6f}, F1: {F1:.6f}, Precision: {P:.6f}, Recall: {R:.6f}")
-            # print("================================================")
             if writer:
                 writer.add_scalar("Loss/test", test_loss, epoch+1)
                 writer.add_scalar("mAP", mAP, epoch+1)
                 writer.add_scalar("F1", F1, epoch+1)
                 writer.add_scalar("Precision", P, epoch+1)
                 writer.add_scalar("Recall", R, epoch+1)
+            else:
+                print("================================================")
+                print(f"[{epoch+1}/{args.num_epochs}] test loss: {test_loss:.6f}")
+                print(f"mAP: {mAP:.6f}, F1: {F1:.6f}, Precision: {P:.6f}, Recall: {R:.6f}")
+                print("================================================")
 
             # increment patience_counter If neither mAP nor F1 score improves
             if mAP > best_mAP:

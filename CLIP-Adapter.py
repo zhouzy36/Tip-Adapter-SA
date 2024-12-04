@@ -14,9 +14,9 @@ from utils import get_class_names, evaluation, append_results, setup_seed
 from loss import IULoss, ANLoss, WANLoss
 
 
-class Adapter(nn.Module):
+class CLIPAdapter(nn.Module):
     def __init__(self, feat_dim, reduction=2, ratio=0.2) -> None:
-        super(Adapter, self).__init__()
+        super(CLIPAdapter, self).__init__()
         self.fc = nn.Sequential(
             nn.Linear(feat_dim, feat_dim // reduction, bias=False),
             nn.ReLU(),
@@ -44,7 +44,11 @@ def train_loop(dataloader, adapter, loss_fn, optimizer):
 
         # Compute prediction and loss
         adapted_features = adapter(X)
-        pred = logit_scale * adapted_features @ text_features.t()
+        adapted_features = adapted_features / adapted_features.norm(dim=1, keepdim=True)
+        if args.loss == "CE":
+            pred = logit_scale * adapted_features @ text_features.t()
+        else:
+            pred = adapted_features @ text_features.t()
         loss = loss_fn(pred, y)
 
         # Backpropagation
@@ -71,10 +75,15 @@ def test_loop(dataloader, adapter, loss_fn):
             X = X.to(device)
             y = y.to(device)
             adapted_features = adapter(X)
-            pred = logit_scale * adapted_features @ text_features.t()
+            adapted_features = adapted_features / adapted_features.norm(dim=1, keepdim=True)
+            if args.loss == "CE":
+                pred = logit_scale * adapted_features @ text_features.t()
+                pred_logits.append(pred.softmax(dim=-1).detach().cpu())
+            else:
+                pred = adapted_features @ text_features.t()
+                pred_logits.append(F.sigmoid(pred).detach().cpu())
             loss = loss_fn(pred, y)
             test_loss += loss.item()
-            pred_logits.append(F.sigmoid(pred).detach().cpu())
             label_vectors.append(y.detach().cpu())
     test_loss /= num_batches
     # evaluate
@@ -181,7 +190,7 @@ if __name__ == "__main__":
                                  pin_memory=args.pin_memory)
 
     # define visual adapter
-    visual_adapter = Adapter(feat_dim, reduction=args.reduction, ratio=args.alpha)
+    visual_adapter = CLIPAdapter(feat_dim, reduction=args.reduction, ratio=args.alpha)
     visual_adapter = visual_adapter.to(device)
 
     # get loss function
@@ -199,7 +208,7 @@ if __name__ == "__main__":
         raise NotImplementedError
 
     # optimizer
-    optimizer = torch.optim.AdamW(visual_adapter.parameters(), lr=args.lr, eps=1e-4, weight_decay=args.weight_decay)
+    optimizer = torch.optim.AdamW(visual_adapter.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
     # learning rate scheduler
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.num_epochs)
@@ -224,16 +233,17 @@ if __name__ == "__main__":
         if (epoch + 1) % args.test_interval == 0:
             test_loss, ap, F1, P, R = test_loop(test_dataloader, visual_adapter, loss_fn)
             mAP = torch.mean(ap)
-            # print("================================================")
-            # print(f"[{epoch+1}/{args.num_epochs}] test loss: {test_loss:.6f}")
-            # print(f"mAP: {mAP:.6f}, F1: {F1:.6f}, Precision: {P:.6f}, Recall: {R:.6f}")
-            # print("================================================")
             if writer:
                 writer.add_scalar("Loss/test", test_loss, epoch+1)
                 writer.add_scalar("mAP", mAP, epoch+1)
                 writer.add_scalar("F1", F1, epoch+1)
                 writer.add_scalar("Precision", P, epoch+1)
                 writer.add_scalar("Recall", R, epoch+1)
+            else:
+                print("================================================")
+                print(f"[{epoch+1}/{args.num_epochs}] test loss: {test_loss:.6f}")
+                print(f"mAP: {mAP:.6f}, F1: {F1:.6f}, Precision: {P:.6f}, Recall: {R:.6f}")
+                print("================================================")
 
             # increment patience_counter If neither mAP nor F1 score improves
             if mAP > best_mAP:

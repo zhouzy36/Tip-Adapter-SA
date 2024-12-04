@@ -30,7 +30,7 @@ args = parser.parse_args()
 print(args)
 device = torch.device("cuda:0")
 
-# check the existence of the file path
+# check the existence of the output path
 output_dir = os.path.dirname(args.output_path)
 if output_dir and not os.path.exists(output_dir):
     os.makedirs(output_dir)
