@@ -20,7 +20,7 @@ Example:
 python Tip-Adapter.py --test-data-path features/voc2012/CLIP/val_all.pt --dataset voc2012 --cache-path caches/voc2012/CLIP/exp1_16shots_filtered.pt --search-hp --save-results
 
 # Tip-Adapter-F
-python Tip-Adapter.py --test-data-path features/voc2012/CLIP/val_all.pt --dataset voc2012 --cache-path caches/voc2012/CLIP/exp1_16shots_filtered.pt --train --train-data-path features/voc2012/CLIP/exp1_16shots_filtered.pt
+python Tip-Adapter.py --test-data-path features/voc2012/CLIP/val_all.pt --dataset voc2012 --cache-path caches/voc2012/CLIP/exp1_16shots_filtered.pt --search-hp --train --train-data-path features/voc2012/CLIP/exp1_16shots_filtered.pt --save-results
 """
 
 class TipAdapter(nn.Module):
@@ -94,7 +94,7 @@ def test_loop(dataloader, adapter, loss_fn):
             
             # record loss and prediction results
             test_loss += loss.item()
-            pred_logits.append(tip_logits.cpu())
+            pred_logits.append(tip_logits.softmax(dim=-1).cpu())
             label_vectors.append(y.cpu())
     test_loss /= num_batches
     # evaluate
@@ -222,7 +222,7 @@ if __name__ == "__main__":
             clip_logits = logit_scale * X @ text_features.t()
             all_clip_logits.append(clip_logits.cpu())
             tip_logits = clip_logits + cache_logits * args.init_alpha
-            pred_logits.append(tip_logits.cpu())
+            pred_logits.append(tip_logits.softmax(dim=-1).cpu())
             label_vectors.append(y)
     all_clip_logits = torch.cat(all_clip_logits, dim=0)
     all_affinity = torch.cat(all_affinity, dim=0)
@@ -253,7 +253,7 @@ if __name__ == "__main__":
                 cache_logits = ((-1) * (beta - beta * all_affinity)).exp() @ cache_values # [num_samples, num_classes]
                 tip_logits = all_clip_logits + alpha * cache_logits # [num_samples, num_classes]
                 # evaluate
-                ap, F1, P, R = evaluation(tip_logits, label_vectors, verbose=False)
+                ap, F1, P, R = evaluation(tip_logits.softmax(dim=-1), label_vectors, verbose=False)
                 mAP = torch.mean(ap)
                 all_metrics = {"mAP": mAP, "F1": F1, "precision": P, "recall": R}
                 # update the best metric
@@ -268,7 +268,7 @@ if __name__ == "__main__":
         # reproduce the best metric
         cache_logits = ((-1) * (best_beta - best_beta * all_affinity)).exp() @ cache_values
         tip_logits = all_clip_logits + cache_logits * best_alpha
-        ap, F1, P, R = evaluation(tip_logits, label_vectors, verbose=False)
+        ap, F1, P, R = evaluation(tip_logits.softmax(dim=-1), label_vectors, verbose=False)
         mAP = torch.mean(ap)
         print(f"The best setting: alpha: {best_alpha:.2f}, beta: {best_beta:.2f}")
         print(f"mAP: {mAP:.6f}, F1: {F1:.6f}, Precision: {P:.6f}, Recall: {R:.6f}")
