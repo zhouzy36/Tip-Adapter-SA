@@ -32,7 +32,7 @@ class CLIPAdapter(nn.Module):
 
 
 def train_loop(dataloader, adapter, loss_fn, optimizer):
-    global logit_scale, text_features
+    global logit_scale, text_features # variables from main
     adapter.train()
     num_batches = len(dataloader)
     train_loss = 0.
@@ -43,12 +43,12 @@ def train_loop(dataloader, adapter, loss_fn, optimizer):
         y = y.to(device)
 
         # Compute prediction and loss
-        adapted_features = adapter(X)
-        adapted_features = adapted_features / adapted_features.norm(dim=1, keepdim=True)
+        X = adapter(X)
+        X = X / X.norm(dim=-1, keepdim=True)
         if args.loss == "CE":
-            pred = logit_scale * adapted_features @ text_features.t()
+            pred = logit_scale * X @ text_features.t()
         else:
-            pred = adapted_features @ text_features.t()
+            pred = X @ text_features.t()
         loss = loss_fn(pred, y)
 
         # Backpropagation
@@ -65,27 +65,36 @@ def train_loop(dataloader, adapter, loss_fn, optimizer):
 
 
 def test_loop(dataloader, adapter, loss_fn):
+    global logit_scale, text_features # variables from main
     adapter.eval()
     num_batches = len(dataloader)
     test_loss = 0.
     pred_logits = []
     label_vectors = []
+
     with torch.no_grad():
         for X, y, _ in dataloader:
+            # move data to device
             X = X.to(device)
             y = y.to(device)
-            adapted_features = adapter(X)
-            adapted_features = adapted_features / adapted_features.norm(dim=1, keepdim=True)
+            
+            # inference
+            X = adapter(X)
+            X = X / X.norm(dim=-1, keepdim=True)
             if args.loss == "CE":
-                pred = logit_scale * adapted_features @ text_features.t()
-                pred_logits.append(pred.softmax(dim=-1).detach().cpu())
+                pred = logit_scale * X @ text_features.t()
+                pred_logits.append(pred.softmax(dim=-1).cpu())
             else:
-                pred = adapted_features @ text_features.t()
-                pred_logits.append(F.sigmoid(pred).detach().cpu())
+                pred = X @ text_features.t()
+                pred_logits.append(F.sigmoid(pred).cpu())
+
+            # record loss and prediction
             loss = loss_fn(pred, y)
             test_loss += loss.item()
-            label_vectors.append(y.detach().cpu())
+            label_vectors.append(y.cpu())
+
     test_loss /= num_batches
+    
     # evaluate
     pred_logits = torch.cat(pred_logits, dim=0)
     label_vectors = torch.cat(label_vectors, dim=0)
@@ -264,13 +273,14 @@ if __name__ == "__main__":
 
     # final test
     test_loss, ap, F1, P, R = test_loop(test_dataloader, visual_adapter, loss_fn)
+    mAP = torch.mean(ap)
     print("================================================")
     print(f"[{epoch+1}/{args.num_epochs}] test loss: {test_loss:.6f}")
-    print(f"mAP: {torch.mean(ap):.6f}, F1: {F1:.6f}, Precision: {P:.6f}, Recall: {R:.6f}")
+    print(f"mAP: {mAP:.6f}, F1: {F1:.6f}, Precision: {P:.6f}, Recall: {R:.6f}")
     print("================================================")
     if writer:
         writer.add_scalar("Loss/test", test_loss, args.num_epochs)
-        writer.add_scalar("mAP", torch.mean(ap), args.num_epochs)
+        writer.add_scalar("mAP", mAP, args.num_epochs)
         writer.add_scalar("F1", F1, args.num_epochs)
         writer.add_scalar("Precision", P, args.num_epochs)
         writer.add_scalar("Recall", R, args.num_epochs)
