@@ -113,4 +113,4 @@ print(f"Save features to {args.output_path}")
 
 # verify zero shot logits when extract features of test image
 if not args.split_file:
-    evaluation(all_zeroshot_logits, all_label_vectors)
+    evaluate(all_zeroshot_logits, all_label_vectors)
