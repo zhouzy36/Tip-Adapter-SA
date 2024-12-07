@@ -13,7 +13,7 @@ from torchvision.transforms import Compose, Resize, ToTensor, Normalize
 from torchvision.transforms import InterpolationMode
 BICUBIC = InterpolationMode.BICUBIC
 
-from utils import scoremap2bbox, compute_F1, evaluation
+from utils import scoremap2bbox, evaluate, search_best_threshold
 from clip_text import class_names_voc, BACKGROUND_CATEGORY_VOC, class_names_coco, BACKGROUND_CATEGORY_COCO
 
 """
@@ -196,18 +196,8 @@ def classify():
     predictions = torch.stack(pred_label_id, dim=0)
     labels = torch.from_numpy(np.array(gt_one_hot))
     
-    _ = evaluation(predictions, labels)
-
-    # search best threshold
-    step = 100
-    best_F1 = 0
-    for thres in np.linspace(0, 1, step+1)[1:-1].tolist():
-        F1, P, R = compute_F1(predictions.clone(), labels.clone(),  mode_F1='overall', k_val=thres, use_relative=True)
-        if F1 > best_F1:
-            best_F1 = F1
-            best_thres = thres
-    F1, P, R = compute_F1(predictions.clone(), labels.clone(),  mode_F1='overall', k_val=best_thres, use_relative=True)
-    print(f"best threshold: {best_thres:.2f}, F1: {F1:.6f}, Precision: {P:.6f}, Recall: {R:.6f}")
+    evaluate(predictions, labels, verbose=True)
+    search_best_threshold(predictions, labels, verbose=True)
 
     
     

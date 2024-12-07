@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 from dataset import ResizeToPatchSizeDivisible
 from module import double_mask_attention_refine
-from utils import get_test_dataset, get_class_names, patch_classify, post_process, compute_F1, evaluation
+from utils import get_test_dataset, get_class_names, patch_classify, post_process, evaluate, search_best_threshold
 
 """
 Examples:
@@ -170,18 +170,8 @@ pred_logits = torch.stack(pred_logits, dim=0)
 label_vectors = torch.cat(label_vectors, dim=0)
 
 # evaluation
-evaluation(pred_logits, label_vectors)
-
-# search best threshold
-step = 100
-best_F1 = 0
-for thres in np.linspace(0, 1, step+1)[1:-1].tolist():
-    F1, P, R = compute_F1(pred_logits.clone(), label_vectors.clone(),  mode_F1='overall', k_val=thres, use_relative=True)
-    if F1 > best_F1:
-        best_F1 = F1
-        best_thres = thres
-F1, P, R = compute_F1(pred_logits.clone(), label_vectors.clone(),  mode_F1='overall', k_val=best_thres, use_relative=True)
-print(f"best threshold: {best_thres:.2f}, F1: {F1:.6f}, Precision: {P:.6f}, Recall: {R:.6f}\n")
+evaluate(pred_logits, label_vectors)
+search_best_threshold(pred_logits, label_vectors)
 
 # clear hooks
 for hook in hook_handles:

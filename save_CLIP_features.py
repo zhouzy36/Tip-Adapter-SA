@@ -9,7 +9,7 @@ from collections import OrderedDict
 from tqdm import tqdm
 
 from dataset import ResizeToPatchSizeDivisible
-from utils import get_test_dataset, get_class_names, get_split_dataset, evaluation
+from utils import get_test_dataset, get_class_names, get_split_dataset, evaluate
 
 """
 Example:
