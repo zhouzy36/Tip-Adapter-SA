@@ -142,7 +142,7 @@ def compute_F1(predictions, labels, mode_F1, k_val, use_relative=False):
 
 # new added
 
-def evaluation(predictions, labels, thres_abs=0.5, verbose=True):
+def evaluate(predictions, labels, thres_abs=0.5, verbose=True):
     """Evaluate: compute AP, F1 scores, precision and recall.
     Args:
         predictions (tensor): classification logit with size [num_samples, num_classes],
@@ -398,3 +398,32 @@ def append_results(data: Union[dict, list], path: str):
     result_data = load_results(path)
     result_data.append(data) if isinstance(data, dict) else result_data.extend(data)
     write_results(result_data, path)
+
+
+def search_best_threshold(predictions: torch.Tensor, labels: torch.Tensor, step: int = 20, verbose: bool = True):
+    """Search best threshold that maximize F1 score.
+    Args:
+        predictions (tensor): The classification logits with size [num_samples, num_classes],
+        labels (tensor): Label vector {0, 1}^{num_classes} with size [num_samples, num_classes].
+        step (int): The number of search step (default: 20).
+        verbose (bool): Verbose flag (default: True).
+    Returns:
+        best_threshold: The best threshold ever found.
+        F1: The best F1 scores.
+        P: Precision.
+        R: Recall.
+    """
+    best_F1 = 0.
+    best_threshold = 0.
+    # search loop
+    for threshold in np.linspace(0, 1, num=step+1)[1:-1]:
+        F1, P, R = compute_F1(predictions.clone(), labels.clone(), mode_F1="overall", k_val=threshold, use_relative=True)
+        if F1 > best_F1:
+            best_F1 = F1
+            best_threshold = threshold
+    # reproduce best F1
+    F1, P, R = compute_F1(predictions.clone(), labels.clone(),  mode_F1='overall', k_val=best_threshold, use_relative=True)
+    # report
+    if verbose:
+        print(f"Best threshold: {best_threshold:.2f}, F1: {F1:.6f}, Precision: {P:.6f}, Recall: {R:.6f}")
+    return best_threshold, F1, P, R
