@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 from dataset import FeatDataset
 from loss import IULoss, ANLoss, WANLoss
-from utils import setup_seed, get_class_names, evaluation, append_results
+from utils import setup_seed, get_class_names, evaluate, append_results
 
 """
 Example:
@@ -53,7 +53,7 @@ def train_loop(dataloader, adapter, loss_fn, optimizer):
         y = y.to(device)
 
         # Compute prediction and loss
-        X /= X.norm(dim=-1, keepdim=True)
+        X = X / X.norm(dim=-1, keepdim=True)
         cache_logits = adapter(X)
         clip_logits = logit_scale * X @ text_features.t()
         tip_logits = clip_logits + cache_logits * args.init_alpha
@@ -86,7 +86,7 @@ def test_loop(dataloader, adapter, loss_fn):
             y = y.to(device)
 
             # Compute prediction and loss
-            X /= X.norm(dim=-1, keepdim=True)
+            X = X / X.norm(dim=-1, keepdim=True)
             cache_logits = adapter(X)
             clip_logits = logit_scale * X @ text_features.t()
             tip_logits = clip_logits + cache_logits * args.init_alpha
@@ -100,8 +100,8 @@ def test_loop(dataloader, adapter, loss_fn):
     # evaluate
     pred_logits = torch.cat(pred_logits, dim=0)
     label_vectors = torch.cat(label_vectors, dim=0)
-    ap, F1, P, R = evaluation(pred_logits, label_vectors, verbose=False)
-    return test_loss, ap, F1, P, R    
+    mAP, F1, P, R = evaluate(pred_logits, label_vectors, verbose=False)
+    return test_loss, mAP, F1, P, R
 
 
 def parse_args():
@@ -217,7 +217,7 @@ if __name__ == "__main__":
         for X, y, _ in tqdm(test_dataloader):
             X = X.to(device)
             # forward
-            X /= X.norm(dim=-1, keepdim=True)
+            X = X / X.norm(dim=-1, keepdim=True)
             cache_logits = adapter(X)
             clip_logits = logit_scale * X @ text_features.t()
             all_clip_logits.append(clip_logits.cpu())
@@ -230,8 +230,7 @@ if __name__ == "__main__":
     label_vectors = torch.cat(label_vectors, dim=0)
 
     # evaluate
-    ap, F1, P, R = evaluation(pred_logits, label_vectors, verbose=True)
-    mAP = torch.mean(ap)
+    mAP, F1, P, R = evaluate(pred_logits, label_vectors, verbose=True)
 
     # %% search hyperparameters
     if args.search_hp:
@@ -253,8 +252,7 @@ if __name__ == "__main__":
                 cache_logits = ((-1) * (beta - beta * all_affinity)).exp() @ cache_values # [num_samples, num_classes]
                 tip_logits = all_clip_logits + alpha * cache_logits # [num_samples, num_classes]
                 # evaluate
-                ap, F1, P, R = evaluation(tip_logits.softmax(dim=-1), label_vectors, verbose=False)
-                mAP = torch.mean(ap)
+                mAP, F1, P, R = evaluate(tip_logits.softmax(dim=-1), label_vectors, verbose=False)
                 all_metrics = {"mAP": mAP, "F1": F1, "precision": P, "recall": R}
                 # update the best metric
                 if all_metrics[metric] > best_metric:
@@ -268,12 +266,12 @@ if __name__ == "__main__":
         # reproduce the best metric
         cache_logits = ((-1) * (best_beta - best_beta * all_affinity)).exp() @ cache_values
         tip_logits = all_clip_logits + cache_logits * best_alpha
-        ap, F1, P, R = evaluation(tip_logits.softmax(dim=-1), label_vectors, verbose=False)
-        mAP = torch.mean(ap)
+        mAP, F1, P, R = evaluate(tip_logits.softmax(dim=-1), label_vectors, verbose=False)
         print(f"The best setting: alpha: {best_alpha:.2f}, beta: {best_beta:.2f}")
         print(f"mAP: {mAP:.6f}, F1: {F1:.6f}, Precision: {P:.6f}, Recall: {R:.6f}")
-        # set the adapter's beta to the best value ever found.
+        # set the alpha and adapter's beta to the best value ever found.
         adapter.set_beta(best_beta)
+        args.init_alpha = best_alpha
     hook.remove()
 
     # %% Fine-tune adapter
@@ -316,9 +314,8 @@ if __name__ == "__main__":
             lr_scheduler.step()
 
             # test
-            if (epoch + 1) % args.test_interval == 0:
-                test_loss, ap, F1, P, R = test_loop(test_dataloader, adapter, loss_fn)
-                mAP = torch.mean(ap)
+            if (epoch + 1) % args.test_interval == 0 or (epoch + 1) == args.num_epochs:
+                test_loss, mAP, F1, P, R = test_loop(test_dataloader, adapter, loss_fn)
                 if writer:
                     writer.add_scalar("Loss/test", test_loss, epoch+1)
                     writer.add_scalar("mAP", mAP, epoch+1)
@@ -333,42 +330,23 @@ if __name__ == "__main__":
 
 
                 # increment patience_counter If neither mAP nor F1 score improves
-                if mAP > best_mAP:
-                    best_mAP = mAP
-                    best_mAP_epoch = epoch + 1
-                    patience_counter = 0
-                elif F1 > best_F1:
-                    best_F1 = F1
-                    best_F1_epoch = epoch + 1
+                if mAP > best_mAP or F1 > best_F1:
                     patience_counter = 0
                 else:
                     patience_counter += 1
+
+                # update best results
+                if mAP > best_mAP:
+                    best_mAP = mAP
+                    best_mAP_epoch = epoch + 1
+                if F1 > best_F1:
+                    best_F1 = F1
+                    best_F1_epoch = epoch + 1
 
                 # early stop if the patience threshold is exceeded
                 if patience_counter > args.patience:
                     print(f"Early stopping at epoch {epoch+1}")
                     break
-
-        # final test
-        test_loss, ap, F1, P, R = test_loop(test_dataloader, adapter, loss_fn)
-        print("================================================")
-        print(f"[{epoch+1}/{args.num_epochs}] test loss: {test_loss:.6f}")
-        print(f"mAP: {torch.mean(ap):.6f}, F1: {F1:.6f}, Precision: {P:.6f}, Recall: {R:.6f}")
-        print("================================================")
-        if writer:
-            writer.add_scalar("Loss/test", test_loss, args.num_epochs)
-            writer.add_scalar("mAP", torch.mean(ap), args.num_epochs)
-            writer.add_scalar("F1", F1, args.num_epochs)
-            writer.add_scalar("Precision", P, args.num_epochs)
-            writer.add_scalar("Recall", R, args.num_epochs)
-            writer.close()
-
-        if mAP > best_mAP:
-            best_mAP = mAP
-            best_mAP_epoch = epoch + 1
-        if F1 > best_F1:
-            best_F1 = F1
-            best_F1_epoch = epoch + 1
 
         # summary
         print(f"The best mAP is {best_mAP:.6f}, obtained after {best_mAP_epoch} epochs training.")

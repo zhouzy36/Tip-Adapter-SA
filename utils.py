@@ -1,177 +1,81 @@
 # coding=utf-8
 import clip
-import cv2
-import matplotlib.pyplot as plt
 import numpy as np
 import random
 import os
 import pandas as pd
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+from sklearn.metrics import precision_score, recall_score, f1_score, average_precision_score
+from torch import Tensor
 from torch.utils.data import Dataset
-import torchvision
-import torchvision.transforms as transforms
-from torchvision.transforms import Compose, Resize, ToTensor, Normalize
-from torchvision.transforms import InterpolationMode
 from typing import Optional, List, Any, Union
-BICUBIC = InterpolationMode.BICUBIC
-_CONTOUR_INDEX = 1 if cv2.__version__.split('.')[0] == '3' else 0
 
 from dataset import NumpyDataset, TxtDataset
 from clip_text import class_names_voc, BACKGROUND_CATEGORY_VOC, class_names_coco, BACKGROUND_CATEGORY_COCO
-from loss import IULoss, ANLoss, WANLoss
 
 
-def scoremap2bbox(scoremap, threshold, multi_contour_eval=False):
-    height, width = scoremap.shape
-    scoremap_image = np.expand_dims((scoremap * 255).astype(np.uint8), 2)
-    _, thr_gray_heatmap = cv2.threshold(
-        src=scoremap_image,
-        thresh=int(threshold * np.max(scoremap_image)),
-        maxval=255,
-        type=cv2.THRESH_BINARY)
-    contours = cv2.findContours(
-        image=thr_gray_heatmap,
-        mode=cv2.RETR_EXTERNAL,
-        method=cv2.CHAIN_APPROX_SIMPLE)[_CONTOUR_INDEX]
-
-    if len(contours) == 0:
-        return np.asarray([[0, 0, 0, 0]]), 1
-
-    if not multi_contour_eval:
-        contours = [max(contours, key=cv2.contourArea)]
-
-    estimated_boxes = []
-    for contour in contours:
-        x, y, w, h = cv2.boundingRect(contour)
-        x0, y0, x1, y1 = x, y, x + w, y + h
-        x1 = min(x1, width - 1)
-        y1 = min(y1, height - 1)
-        estimated_boxes.append([x0, y0, x1, y1])
-
-    return np.asarray(estimated_boxes), len(contours)
-
-
-def compute_AP(predictions, labels):
-    num_class = predictions.size(1)
-    ap = torch.zeros(num_class).to(predictions.device)
-    empty_class = 0
-    for idx_cls in range(num_class):
-        prediction = predictions[:, idx_cls]
-        label = labels[:, idx_cls]
-        #mask = label.abs() == 1
-        if (label > 0).sum() == 0:
-            empty_class += 1
-            continue
-        binary_label = torch.clamp(label, min=0, max=1)
-        sorted_pred, sort_idx = prediction.sort(descending=True)
-        sorted_label = binary_label[sort_idx]
-        tmp = (sorted_label == 1).float()
-        tp = tmp.cumsum(0)
-        fp = (sorted_label != 1).float().cumsum(0)
-        num_pos = binary_label.sum()
-        rec = tp/num_pos
-        prec = tp/(tp+fp)
-        ap_cls = (tmp*prec).sum()/num_pos
-        ap[idx_cls].copy_(ap_cls)
-    return ap
-
-
-def compute_F1(predictions, labels, mode_F1, k_val, use_relative=False):
-    if k_val >= 1:
-        idx = predictions.topk(dim=1, k=k_val)[1]
-        predictions.fill_(0)
-        predictions.scatter_(dim=1, index=idx, src=torch.ones(predictions.size(0), k_val, dtype=predictions.dtype).to(predictions.device))
+def compute_F1(predictions: Tensor, labels: Tensor, average: str="micro", threshold: float=0.5, use_relative: bool=False):
+    """Compute F1 score, precision and recall metrics.
+    Args:
+        predictions (tensor): Classification logits with size [num_samples, num_classes].
+        labels (tensor): Label vector {0, 1}^{num_classes} with size [num_samples, num_classes].
+        average (str): The type of averaging performed on the data, see sklearn's doc for details (default: "micro").
+        threshold (float): Threshold value. (default: 0.5).
+        use_relative (bool): Use relative threshold if set (default: False).
+    Returns:
+        f1: Averaged F1 scores.
+        precision: Averaged precision scores.
+        recall: Averaged recall scores.
+    """
+    assert threshold >= 0 and threshold <= 1
+    # binarize predictions
+    if use_relative:
+        ma = predictions.max(dim=1)[0]
+        mi = predictions.min(dim=1)[0]
+        step = ma - mi
+        threshold = mi + threshold * step
+        for i in range(predictions.shape[0]):
+            predictions[i][predictions[i] <= threshold[i]] = 0
+            predictions[i][predictions[i] > threshold[i]] = 1
     else:
-        if use_relative:
-            ma = predictions.max(dim=1)[0]
-            mi = predictions.min(dim=1)[0]
-            step = ma - mi
-            thres = mi + k_val * step
-        
-            for i in range(predictions.shape[0]):
-                predictions[i][predictions[i] <= thres[i]] = 0 # the order is very important!
-                predictions[i][predictions[i] > thres[i]] = 1
-        else:
-            predictions[predictions > k_val] = 1
-            predictions[predictions <= k_val] = 0
-        
-    if mode_F1 == 'overall':
-        predictions = predictions.bool()
-        labels = labels.bool()
-        TPs = ( predictions &  labels).sum()
-        FPs = ( predictions & ~labels).sum()
-        FNs = (~predictions &  labels).sum()
-        eps = 1.e-9
-        Ps = TPs / (TPs + FPs + eps)
-        Rs = TPs / (TPs + FNs + eps)
-        p = Ps.mean()
-        r = Rs.mean()
-        f1 = 2*p*r/(p+r)
-        
-    elif mode_F1 == 'category':
-        # calculate P and R
-        predictions = predictions.bool()
-        labels = labels.bool()
-        TPs = ( predictions &  labels).sum(axis=0)
-        FPs = ( predictions & ~labels).sum(axis=0)
-        FNs = (~predictions &  labels).sum(axis=0)
-        eps = 1.e-9
-        Ps = TPs / (TPs + FPs + eps)
-        Rs = TPs / (TPs + FNs + eps)
-        p = Ps.mean()
-        r = Rs.mean()
-        f1 = 2*p*r/(p+r)
-        
-    elif mode_F1 == 'sample':
-        # calculate P and R
-        predictions = predictions.bool()
-        labels = labels.bool()
-        TPs = ( predictions &  labels).sum(axis=1)
-        FPs = ( predictions & ~labels).sum(axis=1)
-        FNs = (~predictions &  labels).sum(axis=1)
-        eps = 1.e-9
-        Ps = TPs / (TPs + FPs + eps)
-        Rs = TPs / (TPs + FNs + eps)
-        p = Ps.mean()
-        r = Rs.mean()
-        f1 = 2*p*r/(p+r)
+        predictions[predictions > threshold] = 1
+        predictions[predictions <= threshold] = 0
+    # compute metrics using metric functions from sklearn package
+    f1 = f1_score(labels, predictions, average=average)
+    precision = precision_score(labels, predictions, average=average)
+    recall = recall_score(labels, predictions, average=average)
+    return f1, precision, recall
 
-    return f1, p, r
 
-# new added
-
-def evaluate(predictions, labels, thres_abs=0.5, verbose=True):
-    """Evaluate: compute AP, F1 scores, precision and recall.
+def evaluate(predictions: Tensor, labels: Tensor, threshold: float=0.5, verbose: bool=True):
+    """Compute mAP, F1 scores, precision and recall.
     Args:
         predictions (tensor): classification logit with size [num_samples, num_classes],
         labels (tensor): label vector {0, 1}^{num_classes} with size [num_samples, num_classes].
-        thres_abs (float): threshold. (default: 0.5)
+        threshold (float): Threshold value. (default: 0.5)
         verbose (bool): verbose flag. (default: True)
     
     Returns:
-        ap (tensor): average precision (AP) with shape [num_classes]
-        F1 (tensor): F1 scores
-        P (tensor): precision
-        R (tensor): recall
+        mAP (tensor): Mean average precision (mAP).
+        F1 (tensor): F1 scores.
+        P (tensor): Precision scores.
+        R (tensor): Recall scores.
     """
-    # compute AP
-    ap = compute_AP(predictions, labels)
-
+    # compute mAP
+    mAP = average_precision_score(labels, predictions, average="macro")
     # compute F1, P, R with specific relative threshold
-    F1, P, R = compute_F1(predictions.clone(), labels.clone(),  mode_F1='overall', k_val=thres_abs, use_relative=True)
-
+    F1, P, R = compute_F1(predictions.clone(), labels.clone(), threshold=threshold, use_relative=True)
+    # report
     if verbose:
         print("================================================")
-        print(f"mAP: {torch.mean(ap):.6f}")
+        print(f"mAP: {mAP:.6f}")
         print(f"F1: {F1:.6f}, Precision: {P:.6f}, Recall: {R:.6f}")
         print("================================================")
+    return mAP, F1, P, R
 
-    return ap, F1, P, R
 
-
-def topk_acc(output: torch.Tensor, target: torch.Tensor, k: int = 1):
+def topk_acc(output: Tensor, target: Tensor, k: int=1):
     """Compute batch mean top-k accuracy.
     Args:
         output (Tensor): model prediction with size [N, C]
@@ -187,18 +91,18 @@ def topk_acc(output: torch.Tensor, target: torch.Tensor, k: int = 1):
     return acc
 
 
-def patch_classify(image_features: torch.Tensor, 
-                   text_features: torch.Tensor, 
-                   logit_scale: torch.Tensor = 100., 
-                   drop_first: bool = True, 
-                   use_softmax: bool = True):
+def patch_classify(image_features: Tensor, 
+                   text_features: Tensor, 
+                   logit_scale: Tensor, 
+                   drop_first: bool=True, 
+                   use_softmax: bool=True):
     """Perform patch classify (this function will normalize image features).
     Args:
         image_features (Tensor): CLIP image features with size. [N, L, D]
         text_features (Tensor): CLIP text features with size. [C, D]
-        logit_scale (Tensor): CLIP logits scale. (default: 100.)
-        drop_first (bool): drop the first token if set. (default: True)
-        use_softmax (bool): use softmax to normalize logits. (default: True)
+        logit_scale (Tensor): CLIP logits scale.
+        drop_first (bool): drop the first token if set (default: True).
+        use_softmax (bool): use softmax to normalize logits (default: True).
     Returns:
         logits (Tensor): classification logits with size [N, L, C].
     """
@@ -211,11 +115,11 @@ def patch_classify(image_features: torch.Tensor,
     return logits
 
 
-def upsample_logits(logits:torch.Tensor,
+def upsample_logits(logits: Tensor,
                     input_size: Optional[int],
                     output_size: Optional[int],
                     patch_size: int,
-                    mode: str = "bilinear"):
+                    mode: str="bilinear"):
     """Upsample patch-level classification logits.
     Args:
         logits (Tensor): logits to sampled with size [N, L, C] or [L, C].
@@ -245,7 +149,7 @@ def upsample_logits(logits:torch.Tensor,
     return logits
 
 
-def post_process(model: clip.model.CLIP, x: torch.Tensor, batch_first: bool = False, only_class: bool = True):
+def post_process(model: clip.model.CLIP, x: Tensor, batch_first: bool=False, only_class: bool=True):
     """Project intermediate output to joint text-image latent space
     Args:
         model (CLIP): CLIP model using ViT as image encoder
@@ -269,7 +173,7 @@ def post_process(model: clip.model.CLIP, x: torch.Tensor, batch_first: bool = Fa
     return out
 
 
-def setup_seed(seed: int = 2024):
+def setup_seed(seed: int=2024):
     """Set up random seed.
     Args:
         seed (int): Random seed value.
@@ -283,7 +187,7 @@ def setup_seed(seed: int = 2024):
     torch.backends.cudnn.benchmark = False
 
 
-def get_class_names(dataset: str, include_background: bool = False):
+def get_class_names(dataset: str, include_background: bool=False):
     """Get class names according to the dataset name.
     Args:
         dataset (str): Dataset name.
@@ -303,7 +207,7 @@ def get_class_names(dataset: str, include_background: bool = False):
     return class_names, num_classes
 
 
-def get_test_dataset(dataset: str, transform=None, one_hot_label: bool = True):
+def get_test_dataset(dataset: str, transform=None, one_hot_label: bool=True) -> Dataset:
     """Get pytorch-style test dataset according to the dataset name.
     Args:
         dataset (str): Dataset name.
@@ -328,7 +232,7 @@ def get_test_dataset(dataset: str, transform=None, one_hot_label: bool = True):
     return test_dataset
 
 
-def get_split_dataset(dataset: str, split_file: str, transform=None, one_hot_label: bool = True):
+def get_split_dataset(dataset: str, split_file: str, transform=None, one_hot_label: bool=True) -> Dataset:
     """Get pytorch-style dataset according to the txt split file.
     Args:
         dataset (str): Dataset name.
@@ -400,7 +304,7 @@ def append_results(data: Union[dict, list], path: str):
     write_results(result_data, path)
 
 
-def search_best_threshold(predictions: torch.Tensor, labels: torch.Tensor, step: int = 20, verbose: bool = True):
+def search_best_threshold(predictions: Tensor, labels: Tensor, step: int=20, verbose: bool=True):
     """Search best threshold that maximize F1 score.
     Args:
         predictions (tensor): The classification logits with size [num_samples, num_classes],
@@ -417,12 +321,12 @@ def search_best_threshold(predictions: torch.Tensor, labels: torch.Tensor, step:
     best_threshold = 0.
     # search loop
     for threshold in np.linspace(0, 1, num=step+1)[1:-1]:
-        F1, P, R = compute_F1(predictions.clone(), labels.clone(), mode_F1="overall", k_val=threshold, use_relative=True)
+        F1, P, R = compute_F1(predictions.clone(), labels.clone(), threshold=threshold, use_relative=True)
         if F1 > best_F1:
             best_F1 = F1
             best_threshold = threshold
     # reproduce best F1
-    F1, P, R = compute_F1(predictions.clone(), labels.clone(),  mode_F1='overall', k_val=best_threshold, use_relative=True)
+    F1, P, R = compute_F1(predictions.clone(), labels.clone(), threshold=best_threshold, use_relative=True)
     # report
     if verbose:
         print(f"Best threshold: {best_threshold:.2f}, F1: {F1:.6f}, Precision: {P:.6f}, Recall: {R:.6f}")

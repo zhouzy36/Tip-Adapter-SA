@@ -10,7 +10,7 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from dataset import FeatDataset
-from utils import get_class_names, evaluation, append_results, setup_seed
+from utils import get_class_names, evaluate, append_results, setup_seed
 from loss import IULoss, ANLoss, WANLoss
 
 
@@ -60,8 +60,8 @@ def test_loop(dataloader, model, loss_fn):
     # evaluate
     pred_logits = torch.cat(pred_logits, dim=0)
     label_vectors = torch.cat(label_vectors, dim=0)
-    ap, F1, P, R = evaluation(pred_logits, label_vectors, verbose=False)
-    return test_loss, ap, F1, P, R
+    mAP, F1, P, R = evaluate(pred_logits, label_vectors, verbose=False)
+    return test_loss, mAP, F1, P, R
 
 
 def parse_args():
@@ -197,9 +197,8 @@ if __name__ == "__main__":
         lr_scheduler.step()
 
         # test
-        if (epoch + 1) % args.test_interval == 0:
-            test_loss, ap, F1, P, R = test_loop(test_dataloader, classifier, loss_fn)
-            mAP = torch.mean(ap)
+        if (epoch + 1) % args.test_interval == 0 or (epoch + 1) == args.num_epochs:
+            test_loss, mAP, F1, P, R = test_loop(test_dataloader, classifier, loss_fn)
             if writer:
                 writer.add_scalar("Loss/test", test_loss, epoch+1)
                 writer.add_scalar("mAP", mAP, epoch+1)
@@ -213,42 +212,23 @@ if __name__ == "__main__":
                 print("================================================")
 
             # increment patience_counter If neither mAP nor F1 score improves
-            if mAP > best_mAP:
-                best_mAP = mAP
-                best_mAP_epoch = epoch + 1
-                patience_counter = 0
-            elif F1 > best_F1:
-                best_F1 = F1
-                best_F1_epoch = epoch + 1
+            if mAP > best_mAP or F1 > best_F1:
                 patience_counter = 0
             else:
                 patience_counter += 1
+
+            # update best results
+            if mAP > best_mAP:
+                best_mAP = mAP
+                best_mAP_epoch = epoch + 1
+            if F1 > best_F1:
+                best_F1 = F1
+                best_F1_epoch = epoch + 1
 
             # early stop if the patience threshold is exceeded
             if patience_counter > args.patience:
                 print(f"Early stopping at epoch {epoch+1}")
                 break
-
-    # final test
-    test_loss, ap, F1, P, R = test_loop(test_dataloader, classifier, loss_fn)
-    print("================================================")
-    print(f"[{epoch+1}/{args.num_epochs}] test loss: {test_loss:.6f}")
-    print(f"mAP: {torch.mean(ap):.6f}, F1: {F1:.6f}, Precision: {P:.6f}, Recall: {R:.6f}")
-    print("================================================")
-    if writer:
-        writer.add_scalar("Loss/test", test_loss, args.num_epochs)
-        writer.add_scalar("mAP", torch.mean(ap), args.num_epochs)
-        writer.add_scalar("F1", F1, args.num_epochs)
-        writer.add_scalar("Precision", P, args.num_epochs)
-        writer.add_scalar("Recall", R, args.num_epochs)
-        writer.close()
-
-    if mAP > best_mAP:
-        best_mAP = mAP
-        best_mAP_epoch = epoch + 1
-    if F1 > best_F1:
-        best_F1 = F1
-        best_F1_epoch = epoch + 1
 
     # summary
     print(f"The best mAP is {best_mAP:.6f}, obtained after {best_mAP_epoch} epochs training.")
