@@ -14,6 +14,27 @@ from utils import get_class_names, evaluate, append_results, setup_seed, search_
 from loss import IULoss, ANLoss, WANLoss
 
 
+def normalize(logits: torch.Tensor, method: str="gaussian"):
+    """Normalize classification logits.
+    Args:
+        logits (Tensor): Classification logits with size [num_samples, num_classes].
+        method (str): Normalization method (default: "gaussian")
+    Returns:
+        normalized_logits (Tensor): Normalized logits.
+    """
+    if method == "min-max":
+        logits_min = logits.min(dim=-1, keepdim=True).values
+        logits_max = logits.max(dim=-1, keepdim=True).values
+        normalized_logits = 2 * (logits - logits_min) / (logits_max - logits_min) - 1
+    elif method == "gaussian":
+        logits_std = torch.std(logits, dim=-1, keepdim=True)
+        logits_mean = torch.mean(logits, dim=-1, keepdim=True)
+        normalized_logits = (logits - logits_mean) / logits_std
+    else:
+        raise NotImplementedError
+    return normalized_logits
+
+
 class CLIPAdapter(nn.Module):
     def __init__(self, feat_dim, reduction=2, ratio=0.2) -> None:
         super(CLIPAdapter, self).__init__()
@@ -45,13 +66,11 @@ def train_loop(dataloader, adapter, loss_fn, optimizer):
         # Compute prediction and loss
         X = adapter(X)
         X = X / X.norm(dim=-1, keepdim=True)
+        logits = logit_scale * X @ text_features.t()
         if args.loss == "CE":
-            pred = logit_scale * X @ text_features.t()
+            pred = logits
         else:
-            logits = logit_scale * X @ text_features.t()
-            logits_std = torch.std(logits, dim=-1, keepdim=True)
-            logits_mean = torch.mean(logits, dim=-1, keepdim=True)
-            pred = (logits - logits_mean) / logits_std
+            pred = normalize(logits)
         loss = loss_fn(pred, y)
 
         # Backpropagation
@@ -84,14 +103,12 @@ def test_loop(dataloader, adapter, loss_fn):
             # inference
             X = adapter(X)
             X = X / X.norm(dim=-1, keepdim=True)
+            logits = logit_scale * X @ text_features.t()
             if args.loss == "CE":
-                pred = logit_scale * X @ text_features.t()
+                pred = logits
                 pred_logits.append(pred.softmax(dim=-1).cpu())
             else:
-                logits = logit_scale * X @ text_features.t()
-                logits_std = torch.std(logits, dim=-1, keepdim=True)
-                logits_mean = torch.mean(logits, dim=-1, keepdim=True)
-                pred = (logits - logits_mean) / logits_std
+                pred = normalize(logits)
                 pred_logits.append(F.sigmoid(pred).cpu())
 
             # record loss and prediction
@@ -101,12 +118,9 @@ def test_loop(dataloader, adapter, loss_fn):
 
     test_loss /= num_batches
     
-    # evaluate
     pred_logits = torch.cat(pred_logits, dim=0)
     label_vectors = torch.cat(label_vectors, dim=0)
-    mAP, F1, P, R = evaluate(pred_logits, label_vectors, verbose=False)
-    search_best_threshold(pred_logits, label_vectors, verbose=True)
-    return test_loss, mAP, F1, P, R
+    return test_loss, pred_logits, label_vectors
 
 
 def parse_args():
@@ -247,7 +261,8 @@ if __name__ == "__main__":
 
         # test
         if (epoch + 1) % args.test_interval == 0 or (epoch + 1) == args.num_epochs:
-            test_loss, mAP, F1, P, R = test_loop(test_dataloader, visual_adapter, loss_fn)
+            test_loss, pred_logits, label_vectors = test_loop(test_dataloader, visual_adapter, loss_fn)
+            mAP, F1, P, R = evaluate(pred_logits, label_vectors, verbose=False)
             if writer:
                 writer.add_scalar("Loss/test", test_loss, epoch+1)
                 writer.add_scalar("mAP", mAP, epoch+1)
@@ -258,6 +273,7 @@ if __name__ == "__main__":
                 print("================================================")
                 print(f"[{epoch+1}/{args.num_epochs}] test loss: {test_loss:.6f}")
                 print(f"mAP: {mAP:.6f}, F1: {F1:.6f}, Precision: {P:.6f}, Recall: {R:.6f}")
+                search_best_threshold(pred_logits, label_vectors, verbose=True)
                 print("================================================")
 
             # increment patience_counter If neither mAP nor F1 score improves
