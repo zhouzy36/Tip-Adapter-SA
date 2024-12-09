@@ -138,10 +138,10 @@ def parse_args():
     parser.add_argument("--loss", type=str, choices=["CE", "IU", "AN", "WAN", "AN-LS"], default="CE", help="Loss type (default: CE).")
     
     # training parameters
-    parser.add_argument("--batch-size", type=int, default=16, help="Training batch size (default: 16).")
+    parser.add_argument("--batch-size", type=int, default=64, help="Training batch size (default: 16).")
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--pin-memory", action="store_true")
-    parser.add_argument("--lr", type=float, default=0.01)
+    parser.add_argument("--lr", type=float, default=0.001, help="Learning rate (default: 0.001).")
     parser.add_argument("--weight-decay", type=float, default=0.01)
     parser.add_argument("--num-epochs", type=int, default=50)
     
