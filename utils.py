@@ -127,7 +127,7 @@ def topk_acc(output: Tensor, target: Tensor, k: int=1):
 
 def patch_classify(image_features: Tensor, 
                    text_features: Tensor, 
-                   logit_scale: Tensor, 
+                   logit_scale: Tensor=100., 
                    drop_first: bool=True, 
                    use_softmax: bool=True):
     """Perform patch classify (this function will normalize image features).
