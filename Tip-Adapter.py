@@ -17,10 +17,10 @@ from utils import setup_seed, get_class_names, evaluate, append_results
 """
 Example:
 # Tip-Adapter
-python Tip-Adapter.py --test-data-path features/voc2012/CLIP/val_all.pt --dataset voc2012 --cache-path caches/voc2012/CLIP/exp1_16shots_filtered.pt --search-hp --save-results
+python Tip-Adapter.py --test-data-path features/${dataset}/CLIP/val_all.pt --dataset ${dataset} --cache-path caches/${dataset}/CLIP/exp{split}_{k}shots_filtered.pt --search-hp --tensorboard --save-results
 
 # Tip-Adapter-F
-python Tip-Adapter.py --test-data-path features/voc2012/CLIP/val_all.pt --dataset voc2012 --cache-path caches/voc2012/CLIP/exp1_16shots_filtered.pt --search-hp --train --train-data-path features/voc2012/CLIP/exp1_16shots_filtered.pt --save-results
+python Tip-Adapter.py --test-data-path features/${dataset}/CLIP/val_all.pt --dataset ${dataset} --cache-path caches/${dataset}/CLIP/exp{split}_{k}shots_filtered.pt --search-hp --train --train-data-path features/${dataset}/CLIP/exp{split}_{k}shots_filtered.pt --tensorboard --save-results
 """
 
 class TipAdapter(nn.Module):
