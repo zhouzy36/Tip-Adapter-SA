@@ -20,8 +20,8 @@ from clip.simple_tokenizer import SimpleTokenizer as _Tokenizer
 _tokenizer = _Tokenizer()
 
 """
-Example (for test):
-python CoOp.py --dataset voc2012 --train-data-path splits/voc2012/exp1/16shots_filtered.txt --batch-size 32 --lr 0.01 --num-epochs 5 --warmup constant --warmup-epoch 1 --warmup-lr 1.e-5 --tensorboard --save-results
+Example:
+python CoOp.py --dataset ${dataset} --train-data-path splits/${dataset}/exp${split}/${k}shots_filtered.txt --batch-size ${bs} --lr ${lr} --num-epochs ${epoch} --warmup constant --warmup-epoch 1 --warmup-lr 1.e-5 --tensorboard --save-results
 """
 
 # %% model: copy from CoOp (https://github.com/KaiyangZhou/CoOp/blob/main/trainers/coop.py)

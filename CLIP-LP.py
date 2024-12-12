@@ -13,6 +13,11 @@ from dataset import FeatDataset
 from utils import get_class_names, evaluate, append_results, setup_seed
 from loss import IULoss, ANLoss, WANLoss
 
+"""
+Examples:
+python CLIP-LP.py --train-data-path features/${dataset}/CLIP/exp${split}_${k}shots_filtered.pt --test-data-path features/${dataset}/CLIP/val_all.pt --dataset ${dataset} --loss ${loss} --batch-size ${bs} --lr ${lr} --num-epochs ${epoch} --save-results
+"""
+
 
 def train_loop(dataloader, model, loss_fn, optimizer):
     model.train()
@@ -96,7 +101,9 @@ def parse_args():
 
     # parse args
     args = parser.parse_args()
+
     print(args)
+    
     return args
 
 

@@ -11,28 +11,11 @@ from tqdm import tqdm
 
 from dataset import FeatDataset
 from utils import get_class_names, evaluate, append_results, setup_seed, search_best_threshold
-from loss import IULoss, ANLoss, WANLoss
 
-
-def normalize(logits: torch.Tensor, method: str="gaussian"):
-    """Normalize classification logits.
-    Args:
-        logits (Tensor): Classification logits with size [num_samples, num_classes].
-        method (str): Normalization method (default: "gaussian")
-    Returns:
-        normalized_logits (Tensor): Normalized logits.
-    """
-    if method == "min-max":
-        logits_min = logits.min(dim=-1, keepdim=True).values
-        logits_max = logits.max(dim=-1, keepdim=True).values
-        normalized_logits = 2 * (logits - logits_min) / (logits_max - logits_min) - 1
-    elif method == "gaussian":
-        logits_std = torch.std(logits, dim=-1, keepdim=True)
-        logits_mean = torch.mean(logits, dim=-1, keepdim=True)
-        normalized_logits = (logits - logits_mean) / logits_std
-    else:
-        raise NotImplementedError
-    return normalized_logits
+"""
+Examples:
+python CLIP-Adapter.py --train-data-path features/${dataset}/CLIP/exp${split}_${k}shots_filtered.pt --test-data-path features/${dataset}/CLIP/val_all.pt --dataset ${dataset} --batch-size ${bs} --lr ${lr} --num-epochs ${epoch} --tensorboard --save-results
+"""
 
 
 class CLIPAdapter(nn.Module):
@@ -66,11 +49,7 @@ def train_loop(dataloader, adapter, loss_fn, optimizer):
         # Compute prediction and loss
         X = adapter(X)
         X = X / X.norm(dim=-1, keepdim=True)
-        logits = logit_scale * X @ text_features.t()
-        if args.loss == "CE":
-            pred = logits
-        else:
-            pred = normalize(logits)
+        pred = logit_scale * X @ text_features.t()
         loss = loss_fn(pred, y)
 
         # Backpropagation
@@ -103,16 +82,11 @@ def test_loop(dataloader, adapter, loss_fn):
             # inference
             X = adapter(X)
             X = X / X.norm(dim=-1, keepdim=True)
-            logits = logit_scale * X @ text_features.t()
-            if args.loss == "CE":
-                pred = logits
-                pred_logits.append(pred.softmax(dim=-1).cpu())
-            else:
-                pred = normalize(logits)
-                pred_logits.append(F.sigmoid(pred).cpu())
+            pred = logit_scale * X @ text_features.t()
+            loss = loss_fn(pred, y)
+            pred_logits.append(pred.softmax(dim=-1).cpu())
 
             # record loss and prediction
-            loss = loss_fn(pred, y)
             test_loss += loss.item()
             label_vectors.append(y.cpu())
 
@@ -126,6 +100,8 @@ def test_loop(dataloader, adapter, loss_fn):
 def parse_args():
     # define arguments
     parser = argparse.ArgumentParser(description="CLIP-Adapter: Fine-tuning lightweight adapters with residual connections.")
+
+    # dataset
     parser.add_argument("--train-data-path", type=str, required=True, help="The path to training features.")
     parser.add_argument("--test-data-path", type=str, required=True, help="The path to test features.")
     parser.add_argument("--dataset", type=str, choices=["voc2012", "coco2014"], default="coco2014", help="Experimental dataset (default: voc2012).")
@@ -135,7 +111,7 @@ def parse_args():
     parser.add_argument("--alpha", type=float, default=0.2, help="The residual ratio of adapter  (default: 0.2).")
     
     # loss
-    parser.add_argument("--loss", type=str, choices=["CE", "IU", "AN", "WAN", "AN-LS"], default="CE", help="Loss type (default: CE).")
+    parser.add_argument("--loss", type=str, default="CE", choices=["CE"], help="Loss type (default: CE).")
     
     # training parameters
     parser.add_argument("--batch-size", type=int, default=64, help="Training batch size (default: 16).")
@@ -159,7 +135,9 @@ def parse_args():
 
     # parse args
     args = parser.parse_args()
+
     print(args)
+    
     return args
 
 
@@ -226,14 +204,6 @@ if __name__ == "__main__":
     # get loss function
     if args.loss == "CE":
         loss_fn = nn.CrossEntropyLoss()
-    elif args.loss == "IU":
-        loss_fn = IULoss()
-    elif args.loss == "AN":
-        loss_fn = ANLoss()
-    elif args.loss == "AN-LS":
-        loss_fn = ANLoss(epsilon=0.1)
-    elif args.loss == "WAN":
-        loss_fn = WANLoss(gamma=1/(NUM_CLASSES-1))
     else:
         raise NotImplementedError
 
