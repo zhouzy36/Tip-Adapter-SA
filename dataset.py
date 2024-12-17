@@ -1,12 +1,14 @@
 # coding=utf-8
 import numpy as np
 import os
+import pickle
 from PIL import Image
 from collections.abc import Iterable
 from typing import List, Union
 import torch
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as transforms
+from pycocotools.coco import COCO
 
 
 class ResizeToPatchSizeDivisible(torch.nn.Module):
@@ -159,6 +161,75 @@ class FeatDataset(Dataset):
 
 
 
+class LaSOSplitDataset(Dataset):
+    def __init__(self, 
+                 coco_root: str,
+                 split_file_path: str,
+                 transform=None, 
+                 one_hot_label: bool=True):
+        assert os.path.exists(split_file_path), f"Split file {split_file_path} does not exist."
+        self.transform = transform
+        self.one_hot_label = one_hot_label
+        
+        # invoke COCO api
+        self.coco = COCO(os.path.join(coco_root, "annotations/instances_train2014.json"))
+        self.img_root = os.path.join(coco_root, "train2014")
+        self.coco_img_ids = self.coco.getImgIds()
+        
+        # load dict-style dataset from split file
+        with open(split_file_path, 'rb') as f:
+            data = pickle.load(f) # key: COCO label id, value: image id
+        self.num_classes = len(data.keys())
+        
+        dataset = {} # LaSO dataset dict, key: image id, value: label id range from 0
+        COCO2LaSO = {} # Map COCO label id to label id
+        LaSO2COCO = {} # Map label id to COCO label id
+        for label_id, coco_label_id in enumerate(data.keys()):
+            for img_id in data[coco_label_id]:
+                if img_id in dataset:
+                    dataset[img_id].append(label_id)
+                else:
+                    dataset[img_id] = [label_id]
+            # build label map between LaSO dataset and COCO
+            COCO2LaSO[coco_label_id] = label_id
+            LaSO2COCO[label_id] = coco_label_id
+
+        self.dataset = dataset
+        self.img_list = list(dataset.keys())
+        self.COCO2LaSO = COCO2LaSO
+        self.LaSO2COCO = LaSO2COCO
+
+    def __len__(self):
+        return len(self.img_list)
+    
+    def __getitem__(self, idx: int):
+        img_id = self.img_list[idx]
+        img_path = self.load_image_path(img_id)
+        img = Image.open(img_path).convert('RGB')
+        # transform
+        if self.transform:
+            img = self.transform(img)
+        else:
+            img = transforms.functional.to_tensor(img)
+        
+        label = self.dataset[img_id]
+        if self.one_hot_label:
+            label_vector = torch.zeros(self.num_classes)
+            label_vector[label] = 1
+            label = label_vector
+        else:
+            label = torch.tensor(label)
+
+        return img, label
+    
+    def load_image_path(self, img_id: int):
+        real_img_id = self.coco_img_ids[img_id]
+        img_info = self.coco.loadImgs(real_img_id)[0]
+        img_path = os.path.join(self.img_root, img_info['file_name'])
+        return img_path
+
+
+
 if __name__ == "__main__":
     # NumpyDataset example
     img_root = "datasets/voc2012/VOCdevkit/VOC2012/JPEGImages"
@@ -179,3 +250,8 @@ if __name__ == "__main__":
     # FeatDataset example
     data_path = "features/voc2012/CLIP/val_all.pt"
     dataset = FeatDataset(data_path)
+
+    # LaSOSplitDataset example
+    coco_root = "datasets/coco2014"
+    split_file_path = "splits/LaSO/5shotRun1ClassIdxDict.pkl"
+    dataset = LaSOSplitDataset(coco_root, split_file_path)
