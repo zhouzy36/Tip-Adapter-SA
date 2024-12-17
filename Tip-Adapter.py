@@ -110,6 +110,7 @@ def parse_args():
     parser.add_argument("--test-data-path", type=str, required=True, help="The path to test features.")
     parser.add_argument("--dataset", type=str, default="coco2014", choices=["coco2014", "voc2012"])
     parser.add_argument("--cache-path", required=True, type=str, metavar="PATH", help="cache path")
+    
     # training setting
     parser.add_argument("--train", action="store_true", help="Fine-tuning adapter if set.")
     parser.add_argument("--train-data-path", type=str, help="The path to training features.")
@@ -120,15 +121,19 @@ def parse_args():
     parser.add_argument("--lr", type=float, default=0.01)
     parser.add_argument("--weight-decay", type=float, default=0.001)
     parser.add_argument("--num-epochs", type=int, default=20)
+    
     # early stop
     parser.add_argument("--test-interval", type=int, default=5, help="Test model every 'test-interval' epochs (default: 5).")
     parser.add_argument("--patience", type=int, default=2, help="Stop training if the model does not improve for more than 'patience' test intervals (default: 2).")
+    
     # tensorboard
     parser.add_argument("--tensorboard", action="store_true", help="Enable tensorboard if set.")
     parser.add_argument("--log-root", type=str, default="runs", help="The root path to save tensorboard logs (default: runs).")
+    
     # save results
     parser.add_argument("--save-results", action="store_true", help="Save experiment results if set.")
     parser.add_argument("--result-root", type=str, default="results", help="The root path to save results (default: results).")
+    
     # hyper parameter search
     parser.add_argument("--search-hp", action='store_true', help="Search hyper-parameters if set")
     parser.add_argument("--init-alpha", type=float, default=1.0, help="Residual Ratio alpha. Larger alpha denotes using more knowledge from the few-shot training set and less otherwise (default: 1.0).")
@@ -140,6 +145,7 @@ def parse_args():
     # parse args
     args = parser.parse_args()
     print(args)
+    
     return args
 
 
@@ -280,10 +286,10 @@ if __name__ == "__main__":
         # train loader
         train_dataset = FeatDataset(args.train_data_path)
         train_dataloader = DataLoader(train_dataset, 
-                                    batch_size=args.batch_size, 
-                                    shuffle=True, 
-                                    num_workers=args.num_workers, 
-                                    pin_memory=args.pin_memory)
+                                      batch_size=args.batch_size, 
+                                      shuffle=True, 
+                                      num_workers=args.num_workers, 
+                                      pin_memory=args.pin_memory)
 
         # get loss function
         if args.loss == "CE":
