@@ -9,22 +9,25 @@ from collections import OrderedDict
 from tqdm import tqdm
 
 from dataset import ResizeToPatchSizeDivisible
-from utils import get_split_dataset
+from utils import get_split_dataset, get_class_names
 
 """
 Example:
 python build_CLIP_cache.py --split-file SPLIT_FILE_PATH --dataset coco2014 OUTPUT_CACHE_PATH
 python build_CLIP_cache.py --split-file SPLIT_FILE_PATH --dataset voc2012 OUTPUT_CACHE_PATH
+python build_CLIP_cache.py --split-file SPLIT_FILE_PATH --dataset LaSO --prototype OUTPUT_CACHE_PATH
 """
 
 # arguments
 parser = argparse.ArgumentParser(description="Build and save cache model with CLIP features.")
 parser.add_argument("cache_path", type=str, help="Cache output path.")
 parser.add_argument("--split-file", type=str, required=True, help="The path of split file.")
-parser.add_argument("--dataset", type=str, default="coco2014", choices=["coco2014", "voc2012"])
+parser.add_argument("--dataset", type=str, default="coco2014", choices=["coco2014", "voc2012", "LaSO"])
 parser.add_argument("--keep-resolution", action="store_true", help="Keep image original resolution if set.")
+parser.add_argument("--prototype", action="store_true", help="Save the class prototype as a cache key if set.")
 args = parser.parse_args()
 print(args)
+assert args.dataset != "LaSO" or args.prototype, "If the experimental dataset is LaSO, prototype must be set to true."
 device = torch.device("cuda:0")
 
 # check the existence of the output path
@@ -39,6 +42,10 @@ model, preprocess = clip.load(model_path, device)
 model.eval()
 logit_scale = model.logit_scale.exp().detach()
 print(f"Load model from {model_path}")
+
+# get class names
+_, NUM_CLASSES = get_class_names(args.dataset)
+print("The number of classes in dataset:", NUM_CLASSES)
 
 # dataloader
 if args.keep_resolution:
@@ -72,10 +79,21 @@ with torch.no_grad():
         cache_keys.append(image_features.cpu())
         cache_values.append(label)
 print("Finish building cache model.")
+cache_values = torch.cat(cache_values, dim=0) # [num_samples, num_classes]
 
-cache_keys = torch.cat(cache_keys, dim=0)
+# calculate prototype
+if args.prototype:
+    protos = []
+    for cls_id in range(NUM_CLASSES):
+        sample_ids = torch.nonzero(cache_values[:, cls_id]).flatten()
+        protos.append(torch.mean(cache_keys[sample_ids, :], dim=0)) # [D]
+    cache_keys = torch.stack(protos, dim=0) # [num_classes, D]
+    cache_values = torch.eye(NUM_CLASSES) # [num_classes, num_classes]
+else:
+    cache_keys = torch.cat(cache_keys, dim=0) # [num_samples, D]
+
+# normalize cache keys
 cache_keys /= cache_keys.norm(dim=-1, keepdim=True)
-cache_values = torch.cat(cache_values, dim=0)
 print(f"Cache keys shape: {cache_keys.shape}\nCache values shape: {cache_values.shape}")
 
 # save cache model

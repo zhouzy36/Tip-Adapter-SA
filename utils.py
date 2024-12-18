@@ -13,8 +13,8 @@ from torch.utils.data import Dataset
 from typing import Optional, List, Any, Union
 _CONTOUR_INDEX = 1 if cv2.__version__.split('.')[0] == '3' else 0
 
-from dataset import NumpyDataset, TxtDataset
-from clip_text import class_names_voc, BACKGROUND_CATEGORY_VOC, class_names_coco, BACKGROUND_CATEGORY_COCO
+from dataset import NumpyDataset, TxtDataset, LaSOSplitDataset
+from clip_text import class_names_voc, BACKGROUND_CATEGORY_VOC, class_names_coco, BACKGROUND_CATEGORY_COCO, class_names_LaSO
 
 
 def scoremap2bbox(scoremap, threshold, multi_contour_eval: bool=False):
@@ -236,6 +236,9 @@ def get_class_names(dataset: str, include_background: bool=False):
     elif dataset == "coco2014":
         class_names = class_names_coco + BACKGROUND_CATEGORY_COCO if include_background else class_names_coco
         num_classes = len(class_names_coco)
+    elif dataset == "LaSO":
+        class_names = class_names_LaSO + BACKGROUND_CATEGORY_COCO if include_background else class_names_LaSO
+        num_classes = len(class_names_LaSO)
     else:
         raise NotImplementedError
     return class_names, num_classes
@@ -258,6 +261,10 @@ def get_test_dataset(dataset: str, transform=None, one_hot_label: bool=True) -> 
         img_root = "datasets/coco2014"
         image_file = "imageset/coco2014/formatted_val_images.npy"
         full_label_file = "imageset/coco2014/formatted_val_labels.npy"
+    elif dataset == "LaSO":
+        img_root = "datasets/coco2014"
+        image_file = "imageset/LaSO/formatted_val_images.npy"
+        full_label_file = "imageset/LaSO/formatted_val_labels.npy"
     else:
         raise NotImplementedError
     image_list = np.load(image_file)
@@ -277,17 +284,27 @@ def get_split_dataset(dataset: str, split_file: str, transform=None, one_hot_lab
         dataset (Dataset): Pytorch-style dataset.
     """
     assert os.path.exists(split_file)
-    if dataset == "voc2012":
-        img_root = "datasets/voc2012/VOCdevkit/VOC2012/JPEGImages"
-    elif dataset == "coco2014":
-        img_root = "datasets/coco2014"
+
+    if dataset in ["voc2012", "coco2014"]:
+        if dataset == "voc2012":
+            img_root = "datasets/voc2012/VOCdevkit/VOC2012/JPEGImages"
+        else:
+            img_root = "datasets/coco2014"
+
+        file_list = tuple(open(split_file, "r"))
+        file_list = [id_.rstrip().split(" ") for id_ in file_list]
+        image_list = [x[0] for x in file_list]
+        label_list = [x[1:] for x in file_list]
+
+        dataset = TxtDataset(dataset, img_root, image_list, label_list, transform=transform, one_hot_label=one_hot_label)
+
+    elif dataset == "LaSO":
+        coco_root = "datasets/coco2014"
+        dataset = LaSOSplitDataset(coco_root, split_file, transform=transform, one_hot_label=one_hot_label)
+
     else:
         raise NotImplementedError
-    file_list = tuple(open(split_file, "r"))
-    file_list = [id_.rstrip().split(" ") for id_ in file_list]
-    image_list = [x[0] for x in file_list]
-    label_list = [x[1:] for x in file_list]
-    dataset = TxtDataset(dataset, img_root, image_list, label_list, transform=transform, one_hot_label=one_hot_label)
+
     return dataset
 
 

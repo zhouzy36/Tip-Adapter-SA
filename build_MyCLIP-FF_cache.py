@@ -14,31 +14,32 @@ from tqdm import tqdm
 
 from dataset import ResizeToPatchSizeDivisible
 from module import double_mask_attention_refine, extract_class_specific_features
-from utils import get_test_dataset, get_class_names, get_split_dataset, patch_classify, post_process, evaluate
+from utils import get_class_names, get_split_dataset, patch_classify, post_process
 
 """
 Examples:
 python build_MyCLIP-FF_cache.py --split-file SPLIT_FILE_PATH --dataset coco2014 OUTPUT_CACHE_PATH
 python build_MyCLIP-FF_cache.py --split-file SPLIT_FILE_PATH --dataset voc2012 OUTPUT_CACHE_PATH
+python build_MyCLIP-FF_cache.py --split-file SPLIT_FILE_PATH --dataset LaSO --prototype OUTPUT_CACHE_PATH
 """
 
 # parse arguments
-parser = argparse.ArgumentParser(description="Save image features extracted by my Zero-Shot CLIP with multi-scale feature fusion.")
+parser = argparse.ArgumentParser(description="Build and save cache model with MyCLIP-FF features.")
 parser.add_argument("cache_path", type=str, help="Cache output path.")
 parser.add_argument("--split-file", type=str, required=True, help="The path of split file.")
-parser.add_argument("--dataset", type=str, default="coco2014", choices=["coco2014", "voc2012"])
+parser.add_argument("--dataset", type=str, default="coco2014", choices=["coco2014", "voc2012", "LaSO"])
 parser.add_argument("--num-scales", type=int, default=2, help="The number of input scales (default: 2).")
 parser.add_argument("--max-reduction", type=float, default=2, help="The maximum downsampling rate of the image (default: 2).")
+parser.add_argument("--prototype", action="store_true", help="Save the class prototypes as cache keys if set.")
 args = parser.parse_args()
 print(args)
+assert args.dataset != "LaSO" or args.prototype, "If the experimental dataset is LaSO, prototype must be set to true."
 device = torch.device("cuda:0")
 
 # check the existence of the output path
 output_dir = os.path.dirname(args.cache_path)
 if output_dir and not os.path.exists(output_dir):
     os.makedirs(output_dir)
-
-assert not args.split_file or os.path.exists(args.split_file)
 
 # compute scale factor
 scale_factor = 1 / math.pow(args.max_reduction, 1 / (args.num_scales - 1))
@@ -178,10 +179,24 @@ with torch.no_grad():
         cache_keys.append(class_specific_features.cpu())
         cache_values.append(label)
 print("Finish building cache model.")
-
-cache_keys = torch.cat(cache_keys, dim=0)
-cache_keys /= cache_keys.norm(dim=-1, keepdim=True)
 cache_values = torch.cat(cache_values, dim=0)
+
+if args.prototype:
+    protos = []
+    for cls_id in range(NUM_CLASSES):
+        sample_ids = torch.nonzero(cache_values[:, cls_id]).flatten().tolist()
+        cls_spec_feats = []
+        for idx in sample_ids:
+            feat_idx = cache_values[idx, :cls_id].sum().int().item()
+            cls_spec_feats.append(cache_keys[idx][feat_idx])
+        protos.append(torch.stack(cls_spec_feats, dim=0).mean(dim=0))
+    cache_keys = torch.stack(protos, dim=0) # [num_classes, D]
+    cache_values = torch.eye(NUM_CLASSES) # [num_classes, num_classes]
+else:
+    cache_keys = torch.cat(cache_keys, dim=0)
+
+# normalize cache keys
+cache_keys /= cache_keys.norm(dim=-1, keepdim=True)
 print(f"Cache keys shape: {cache_keys.shape}\nCache values shape: {cache_values.shape}")
 
 # save cache model

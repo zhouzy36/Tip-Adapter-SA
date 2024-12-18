@@ -275,8 +275,8 @@ def extract_class_specific_features(patch_feats: torch.Tensor,
 
     class_specific_features = torch.empty([label.shape[-1], patch_feats.shape[-1]]).to(patch_feats.device)
 
-    for i, ccls in enumerate(label.flatten().tolist()):
-        temp_logits = logits[:,ccls]
+    for i, cls_id in enumerate(label.flatten().tolist()):
+        temp_logits = logits[:, cls_id]
         temp_logits = temp_logits - temp_logits.min()
         temp_logits = temp_logits / temp_logits.max()
         idx = torch.where(temp_logits > 0.5) # idx = torch.where(temp_logits > 0.5)[0]

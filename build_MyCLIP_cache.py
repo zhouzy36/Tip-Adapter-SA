@@ -18,15 +18,18 @@ from utils import get_split_dataset, get_class_names, patch_classify, post_proce
 Example:
 python build_MyCLIP_cache.py --split-file SPLIT_FILE_PATH --dataset coco2014 OUTPUT_CACHE_PATH
 python build_MyCLIP_cache.py --split-file SPLIT_FILE_PATH --dataset voc2012 OUTPUT_CACHE_PATH
+python build_MyCLIP_cache.py --split-file SPLIT_FILE_PATH --dataset LaSO --prototype OUTPUT_CACHE_PATH
 """
 
 # arguments
-parser = argparse.ArgumentParser(description="Build and save cache model with CLIP features.")
+parser = argparse.ArgumentParser(description="Build and save cache model with MyCLIP features.")
 parser.add_argument("cache_path", type=str, help="Cache output path.")
 parser.add_argument("--split-file", type=str, required=True, help="The path of split file.")
-parser.add_argument("--dataset", type=str, default="coco2014", choices=["coco2014", "voc2012"])
+parser.add_argument("--dataset", type=str, default="coco2014", choices=["coco2014", "voc2012", "LaSO"])
+parser.add_argument("--prototype", action="store_true", help="Save the class prototype as a cache key if set.")
 args = parser.parse_args()
 print(args)
+assert args.dataset != "LaSO" or args.prototype, "If the experimental dataset is LaSO, prototype must be set to true."
 device = torch.device("cuda:0")
 
 # check the existence of the output path
@@ -138,17 +141,32 @@ with torch.no_grad():
         # refine
         logits = double_mask_attention_refine(logits.squeeze(), h, w, patch_size, attention_weights)
         
-        # extract class-specific features
-        class_specific_features = extract_class_specific_features(patch_features.squeeze(), logits, label) # [num_labels, D]
+        # extract class-specific features with shape [num_labels, D]
+        class_specific_features = extract_class_specific_features(patch_features.squeeze(), logits, label)
 
         # update keys and values
         cache_keys.append(class_specific_features.cpu())
         cache_values.append(label)
 print("Finish building cache model.")
-
-cache_keys = torch.cat(cache_keys, dim=0)
-cache_keys /= cache_keys.norm(dim=-1, keepdim=True)
 cache_values = torch.cat(cache_values, dim=0)
+
+# calculate prototype
+if args.prototype:
+    protos = []
+    for cls_id in range(NUM_CLASSES):
+        sample_ids = torch.nonzero(cache_values[:, cls_id]).flatten().tolist()
+        cls_spec_feats = []
+        for idx in sample_ids:
+            feat_idx = cache_values[idx, :cls_id].sum().int().item()
+            cls_spec_feats.append(cache_keys[idx][feat_idx])
+        protos.append(torch.stack(cls_spec_feats, dim=0).mean(dim=0))
+    cache_keys = torch.stack(protos, dim=0) # [num_classes, D]
+    cache_values = torch.eye(NUM_CLASSES) # [num_classes, num_classes]
+else:
+    cache_keys = torch.cat(cache_keys, dim=0)
+
+# normalize cache keys
+cache_keys /= cache_keys.norm(dim=-1, keepdim=True)
 print(f"Cache keys shape: {cache_keys.shape}\nCache values shape: {cache_values.shape}")
 
 # save cache model
