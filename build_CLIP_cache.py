@@ -79,6 +79,7 @@ with torch.no_grad():
         cache_keys.append(image_features.cpu())
         cache_values.append(label)
 print("Finish building cache model.")
+cache_keys = torch.cat(cache_keys, dim=0) # [num_samples, D]
 cache_values = torch.cat(cache_values, dim=0) # [num_samples, num_classes]
 
 # calculate prototype
@@ -89,8 +90,6 @@ if args.prototype:
         protos.append(torch.mean(cache_keys[sample_ids, :], dim=0)) # [D]
     cache_keys = torch.stack(protos, dim=0) # [num_classes, D]
     cache_values = torch.eye(NUM_CLASSES) # [num_classes, num_classes]
-else:
-    cache_keys = torch.cat(cache_keys, dim=0) # [num_samples, D]
 
 # normalize cache keys
 cache_keys /= cache_keys.norm(dim=-1, keepdim=True)
