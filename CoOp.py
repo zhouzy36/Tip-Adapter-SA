@@ -338,7 +338,7 @@ if __name__ == "__main__":
         log_dir = os.path.join(args.log_root, # log root path
                                args.dataset, # dataset 
                                method, # method
-                               os.path.basename(args.train_data_path).split(".")[0], # traing data
+                               args.train_data_path.split("/")[-2] + "_" + os.path.basename(args.train_data_path).split(".")[0],
                                f"{args.loss}_bs{args.batch_size}_lr{args.lr}_wd{args.weight_decay}_ep{args.num_epochs}") # hyperparameters
         writer = SummaryWriter(log_dir)
 
@@ -490,5 +490,5 @@ if __name__ == "__main__":
         result_path = os.path.join(args.result_root, 
                                    args.dataset, 
                                    method, 
-                                   os.path.basename(args.train_data_path).split(".")[0]+".csv")
+                                   args.train_data_path.split("/")[-2] + "_" + os.path.basename(args.train_data_path).split(".")[0] + ".csv")
         append_results(result_data, result_path)
