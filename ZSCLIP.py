@@ -13,11 +13,12 @@ from utils import get_test_dataset, get_class_names, post_process, patch_classif
 Example:
 python ZSCLIP.py --dataset coco2014
 python ZSCLIP.py --dataset voc2012
+python ZSCLIP.py --dataset LaSO
 """
 
 # parse arguments
 parser = argparse.ArgumentParser(description="Vanilla zero-shot CLIP")
-parser.add_argument("--dataset", type=str, choices=["voc2012", "coco2014"], default="coco2014")
+parser.add_argument("--dataset", type=str, choices=["voc2012", "coco2014", "LaSO"], default="coco2014")
 parser.add_argument("--keep-resolution", action="store_true", help="Keep image original resolution.")
 parser.add_argument("--use-feature-map", action="store_true", help="Use patch features to classify.")
 args = parser.parse_args()

@@ -19,13 +19,15 @@ from utils import get_test_dataset, get_class_names, patch_classify, post_proces
 Examples:
 python MyZSCLIP-FF.py --dataset coco2014
 python MyZSCLIP-FF.py --dataset voc2012
+python MyZSCLIP-FF.py --dataset LaSO
 python MyZSCLIP-FF.py --dataset coco2014 --num-scales 3
 python MyZSCLIP-FF.py --dataset voc2012 --num-scales 3
+python MyZSCLIP-FF.py --dataset LaSO --num-scales 3
 """
 
 # parse arguments
 parser = argparse.ArgumentParser(description="My Zero-Shot CLIP with multi-scale feature fusion.")
-parser.add_argument("--dataset", type=str, default="coco2014", choices=["voc2012", "coco2014"])
+parser.add_argument("--dataset", type=str, default="coco2014", choices=["voc2012", "coco2014", "LaSO"])
 parser.add_argument("--num-scales", type=int, default=2, help="The number of input scales (default: 2).")
 parser.add_argument("--max-reduction", type=float, default=2, help="The maximum downsampling rate of the image (default: 2).")
 args = parser.parse_args()

@@ -15,11 +15,12 @@ from utils import get_test_dataset, get_class_names, evaluate, search_best_thres
 Example:
 python CLIPSurgery.py --dataset coco2014
 python CLIPSurgery.py --dataset voc2012
+python CLIPSurgery.py --dataset LaSO
 """
 
 # parse arguments
 parser = argparse.ArgumentParser(description="CLIP Surgery")
-parser.add_argument("--dataset", type=str, choices=["voc2012", "coco2014"], default="coco2014")
+parser.add_argument("--dataset", type=str, choices=["voc2012", "coco2014", "LaSO"], default="coco2014")
 parser.add_argument("--image-size", type=int, default=224, choices=[224, 512], help="input image size. (default: 224)")
 args = parser.parse_args()
 print(args)

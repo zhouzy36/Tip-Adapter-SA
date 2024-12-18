@@ -14,12 +14,13 @@ from torchvision.transforms import InterpolationMode
 BICUBIC = InterpolationMode.BICUBIC
 
 from utils import scoremap2bbox, evaluate, search_best_threshold
-from clip_text import class_names_voc, BACKGROUND_CATEGORY_VOC, class_names_coco, BACKGROUND_CATEGORY_COCO
+from clip_text import class_names_voc, BACKGROUND_CATEGORY_VOC, class_names_coco, BACKGROUND_CATEGORY_COCO, class_names_LaSO
 
 """
 Example:
 python TagCLIP.py --dataset coco2014
 python TagCLIP.py --dataset voc2012
+python TagCLIP.py --dataset LaSO
 """
 
 def _convert_image_to_rgb(image):
@@ -203,7 +204,7 @@ def classify():
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='')
-    parser.add_argument('--dataset', type=str, default='coco2014', choices=['voc2012', 'coco2014'])
+    parser.add_argument("--dataset", type=str, default="coco2014", choices=["voc2012", "coco2014", "LaSO"])
     args = parser.parse_args()
     print(args)
     device = torch.device("cuda:0")
@@ -221,6 +222,12 @@ if __name__ == "__main__":
         full_label_file = "imageset/coco2014/formatted_val_labels.npy"
         class_names = class_names_coco + BACKGROUND_CATEGORY_COCO
         NUM_CLASSES = len(class_names_coco)
+    elif args.dataset == "LaSO":
+        img_root = "datasets/coco2014"
+        image_file = "imageset/LaSO/formatted_val_images.npy"
+        full_label_file = "imageset/LaSO/formatted_val_labels.npy"
+        class_names = class_names_LaSO + BACKGROUND_CATEGORY_COCO
+        NUM_CLASSES = len(class_names_LaSO)
     else:
         raise NotImplementedError
     

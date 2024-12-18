@@ -17,11 +17,12 @@ from utils import get_test_dataset, get_class_names, post_process, patch_classif
 Example:
 python MaskCLIP.py --dataset coco2014
 python MaskCLIP.py --dataset voc2012
+python MaskCLIP.py --dataset LaSO
 """
 
 # parse arguments
 parser = argparse.ArgumentParser(description="MaskCLIP")
-parser.add_argument("--dataset", type=str, choices=["voc2012", "coco2014"], default="coco2014")
+parser.add_argument("--dataset", type=str, choices=["voc2012", "coco2014", "LaSO"], default="coco2014")
 parser.add_argument("--keep-resolution", action="store_true", help="Keep original resolution if set.")
 args = parser.parse_args()
 print(args)

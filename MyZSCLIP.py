@@ -17,11 +17,12 @@ from utils import get_test_dataset, get_class_names, patch_classify, post_proces
 Example:
 python MyZSCLIP.py --dataset coco2014
 python MyZSCLIP.py --dataset voc2012
+python MyZSCLIP.py --dataset LaSO
 """
 
 # parse arguments
 parser = argparse.ArgumentParser(description="My Zero-Shot CLIP without feature fusion.")
-parser.add_argument("--dataset", type=str, default="coco2014", choices=['voc2012', 'coco2014'])
+parser.add_argument("--dataset", type=str, default="coco2014", choices=["voc2012", "coco2014", "LaSO"])
 args = parser.parse_args()
 print(args)
 device = torch.device("cuda:0")
