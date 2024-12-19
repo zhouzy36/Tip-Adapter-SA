@@ -24,7 +24,7 @@ python save_CLIP_features.py --dataset voc2012 --split-file splits/voc2012/exp1/
 parser = argparse.ArgumentParser(description="Save CLIP features.")
 parser.add_argument("output_path", type=str, help="The output path.")
 parser.add_argument("--split-file", type=str, help="The path to split file.")
-parser.add_argument("--dataset", type=str, choices=["voc2012", "coco2014"], default="coco2014")
+parser.add_argument("--dataset", type=str, choices=["voc2012", "coco2014", "LaSO"], default="coco2014")
 parser.add_argument("--keep-resolution", action="store_true", help="Keep image original resolution if set.")
 args = parser.parse_args()
 print(args)

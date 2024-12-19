@@ -29,7 +29,7 @@ python save_MyCLIP-FF_features.py --dataset voc2012 --split-file splits/voc2012/
 parser = argparse.ArgumentParser(description="Save image features extracted by my Zero-Shot CLIP with multi-scale feature fusion.")
 parser.add_argument("output_path", type=str, help="The output path.")
 parser.add_argument("--split-file", type=str, help="The path to split file.")
-parser.add_argument("--dataset", type=str, default="coco2014", choices=["voc2012", "coco2014"])
+parser.add_argument("--dataset", type=str, default="coco2014", choices=["voc2012", "coco2014", "LaSO"])
 parser.add_argument("--num-scales", type=int, default=2, help="The number of input scales (default: 2).")
 parser.add_argument("--max-reduction", type=float, default=2, help="The maximum downsampling rate of the image (default: 2).")
 args = parser.parse_args()

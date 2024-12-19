@@ -27,7 +27,7 @@ python save_MyCLIP_features.py --dataset voc2012 --split-file splits/voc2012/exp
 parser = argparse.ArgumentParser(description="Save image features extracted by my Zero-Shot CLIP.")
 parser.add_argument("output_path", type=str, help="The output path.")
 parser.add_argument("--split-file", type=str, help="The path to split file.")
-parser.add_argument("--dataset", type=str, default="coco2014", choices=['voc2012', 'coco2014'])
+parser.add_argument("--dataset", type=str, default="coco2014", choices=["voc2012", "coco2014", "LaSO"])
 args = parser.parse_args()
 print(args)
 device = torch.device("cuda:0")
