@@ -7,18 +7,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from dataset import FeatDataset
-from loss import IULoss, ANLoss, WANLoss
 from utils import setup_seed, get_class_names, evaluate, append_results
 
 """
 Example:
-python Tip-Adapter.py --test-data-path features/voc2012/MyCLIP/val_all.pt --dataset voc2012 --cache-path caches/voc2012/MyCLIP/exp1_16shots_filtered.pt --k-shot 16 --normalize softmax --search-hp
-python Tip-Adapter.py --test-data-path features/voc2012/MyCLIP/val_all.pt --dataset voc2012 --cache-path caches/voc2012/MyCLIP/exp1_16shots_filtered.pt --k-shot 16 --normalize min-max --search-hp
-python Tip-Adapter.py --test-data-path features/voc2012/MyCLIP/val_all.pt --dataset voc2012 --cache-path caches/voc2012/MyCLIP/exp1_16shots_filtered.pt --k-shot 16 --normalize gaussian --search-hp
+python Tip-Adapter-SA.py --test-data-path features/${dataset}/MyCLIP/val_all.pt --dataset ${dataset} --cache-path caches/${dataset}/MyCLIP/exp${split}_${k}shots_filtered.pt --k-shot ${k} --normalize ${normalize} --search-hp --save-results
 """
 
 def normalize(logits: torch.Tensor, method: str="softmax"):
@@ -69,7 +65,7 @@ def parse_args():
     # parse arguments
     parser = argparse.ArgumentParser()
     parser.add_argument("--test-data-path", type=str, required=True, help="The path to test features.")
-    parser.add_argument("--dataset", type=str, default="coco2014", choices=["coco2014", "voc2012"])
+    parser.add_argument("--dataset", type=str, default="coco2014", choices=["coco2014", "voc2012", "LaSO"])
     parser.add_argument("--cache-path", required=True, type=str, metavar="PATH", help="cache path")
     parser.add_argument("--k-shot", required=True, type=int, help="Shot number.")
     
@@ -102,19 +98,9 @@ if __name__ == "__main__":
     args = parse_args()
     
     # initialize
-    method = "Tip-Adapter-SA2-F" if args.train else "Tip-Adapter-SA2"
+    method = "Tip-Adapter-SA"
     method += f"-{args.cache_path.split("/")[2]}"
     device = torch.device("cuda:0")
-    
-    # initialize tensorboard writer
-    writer = None
-    if args.tensorboard and args.train:
-        log_dir = os.path.join(args.log_root, # log root path
-                               args.dataset, # dataset 
-                               method, # method
-                               os.path.basename(args.train_data_path).split(".")[0], # traing data
-                               f"{args.loss}_bs{args.batch_size}_lr{args.lr}_wd{args.weight_decay}_ep{args.num_epochs}") # hyperparameters
-        writer = SummaryWriter(log_dir)
 
     # load CLIP model
     model_path = "pretrained_models/ViT-B-16.pt"
@@ -138,9 +124,7 @@ if __name__ == "__main__":
     test_dataset = FeatDataset(args.test_data_path)
     test_dataloader = DataLoader(test_dataset, 
                                  batch_size=128, 
-                                 shuffle=False, 
-                                 num_workers=args.num_workers, 
-                                 pin_memory=args.pin_memory)
+                                 shuffle=False)
     
     # load cache model
     assert os.path.exists(args.cache_path)
