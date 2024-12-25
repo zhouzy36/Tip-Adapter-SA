@@ -28,7 +28,7 @@ class IULoss(nn.Module):
 
 
 class ANLoss(nn.Module):
-    def __init__(self, reduction: str = "mean", epsilon: float = 0.0):
+    def __init__(self, epsilon: float = 0.0, reduction: str = "mean"):
         """Assume negative (AN) loss: assume unobserved labels are negative.
         Args:
             reduction (str): Specifies the reduction to apply to the output (default: "mean").
@@ -77,3 +77,33 @@ class WANLoss(nn.Module):
             return loss_sum
         else:
             return loss_sum / torch.numel(input)
+
+
+
+class EMLoss(nn.Module):
+    def __init__(self, alpha: float, reduction: str = "mean"):
+        """Entropy-Maximization (EM) Loss
+        Args:
+            alpha (float): The hyperparameter to down-weight the strength of entropy maximization.
+            reduction (str): Specifies the reduction to apply to the output (default: "mean").
+        """
+        super(EMLoss, self).__init__()
+        self.alpha = alpha
+        self.reduction = reduction
+        self.BCEWithLogitsLoss = nn.BCEWithLogitsLoss(reduction="none")
+
+    def forward(self, input: Tensor, target: Tensor) -> Tensor:
+        assert input.shape == target.shape
+        positive_loss = self.BCEWithLogitsLoss(input[target == 1], target[target == 1])
+        unknown_loss = -self.alpha * self.entropy(F.sigmoid(input[target == 0]))
+        loss_sum = torch.sum(positive_loss) + torch.sum(unknown_loss)
+        if self.reduction == "sum":
+            return loss_sum
+        else:
+            return loss_sum / torch.numel(input)
+
+    def entropy(self, p: Tensor):
+        return -(p * self.log(p) + (1 - p) * self.log(1 - p))
+    
+    def log(self, x: Tensor) -> Tensor:
+        return torch.clamp(torch.log(x), min=-100)
