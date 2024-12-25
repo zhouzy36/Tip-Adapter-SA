@@ -139,9 +139,15 @@ class FeatDataset(Dataset):
     def __init__(self, data_path: str):
         assert os.path.exists(data_path)
         data = torch.load(data_path, map_location=torch.device("cpu"))
+
+        assert "feats" in data and "labels" in data
         self.feats = data["feats"]
         self.labels = data["labels"]
-        self.logits = data["logits"]
+
+        if "logits" in data:
+            self.logits = data["logits"]
+        else:
+            self.logits = torch.zeros_like(self.labels)
         self.feat_dim = self.feats.shape[-1]
 
     def __len__(self):
@@ -158,6 +164,9 @@ class FeatDataset(Dataset):
     
     def get_all_features(self):
         return self.feats
+    
+    def get_feat_dim(self):
+        return self.feats.shape[-1]
 
 
 
