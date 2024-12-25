@@ -1,14 +1,18 @@
 # coding=utf-8
 import clip
-import numpy as np
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
-from typing import List
+from torch import Tensor
+import torchvision
+from torchvision.models import get_model_weights
+from torchvision.models.vision_transformer import interpolate_embeddings
+from typing import List, Optional
 from utils import scoremap2bbox
 
 
 @torch.no_grad()
-def key_smoothing(logits: torch.Tensor, model: clip.model.CLIP, penultimate_features: torch.Tensor):
+def key_smoothing(logits: Tensor, model: clip.model.CLIP, penultimate_features: Tensor):
     """Refine logits using key similarities of the last ViT layer proposed in MaskCLIP.
     Args:
         logits (Tensor): The patch-level classification logits with size [N, L, C].
@@ -49,8 +53,8 @@ def key_smoothing(logits: torch.Tensor, model: clip.model.CLIP, penultimate_feat
 
 
 @torch.no_grad()
-def raw_attention_refine(logits: torch.Tensor,
-                     attn_weight_list: List[torch.Tensor],
+def raw_attention_refine(logits: Tensor,
+                     attn_weight_list: List[Tensor],
                      last_k: int = 3,
                      mask: bool = True,
                      vote_k: int = 4):
@@ -86,11 +90,11 @@ def raw_attention_refine(logits: torch.Tensor,
 
 
 @torch.no_grad()
-def class_attention_refine(logits: torch.Tensor,
+def class_attention_refine(logits: Tensor,
                            h: int,
                            w: int,
                            patch_size: int,
-                           attn_weight_list: List[torch.Tensor],
+                           attn_weight_list: List[Tensor],
                            last_k: int = 3):
     """Refine logtis using masked attention weights where masks are generated according to logits.
     Args:
@@ -130,11 +134,11 @@ def class_attention_refine(logits: torch.Tensor,
 
 
 @torch.no_grad()
-def double_mask_attention_refine(logits: torch.Tensor,
+def double_mask_attention_refine(logits: Tensor,
                                  h: int,
                                  w: int,
                                  patch_size: int,
-                                 attn_weight_list: List[torch.Tensor],
+                                 attn_weight_list: List[Tensor],
                                  last_k: int = 3,
                                  vote_k: int = 4
                                  ):
@@ -194,11 +198,11 @@ def double_mask_attention_refine(logits: torch.Tensor,
     return refined_logits
 
 @torch.no_grad()
-def my_double_mask_attention_refine(logits: torch.Tensor,
+def my_double_mask_attention_refine(logits: Tensor,
                                  h: int,
                                  w: int,
                                  patch_size: int,
-                                 attn_weight_list: List[torch.Tensor],
+                                 attn_weight_list: List[Tensor],
                                  last_k: int = 3,
                                  vote_k: int = 4
                                  ):
@@ -254,9 +258,9 @@ def my_double_mask_attention_refine(logits: torch.Tensor,
     return refined_logits
 
 
-def extract_class_specific_features(patch_feats: torch.Tensor, 
-                                    logits: torch.Tensor, 
-                                    label: torch.Tensor, 
+def extract_class_specific_features(patch_feats: Tensor, 
+                                    logits: Tensor, 
+                                    label: Tensor, 
                                     one_hot_label: bool = True):
     """Extract class specific features by averaging class specific patch features.
     Args:
@@ -283,3 +287,57 @@ def extract_class_specific_features(patch_feats: torch.Tensor,
         class_specific_features[i] = torch.mean(patch_feats[idx], dim=0, keepdim=True)
     
     return class_specific_features
+
+
+
+class FeatureExtractor(nn.Module):
+    def __init__(self, model_name: str, image_size: int=224, weights: Optional[str]=None):
+        """Feature extractor based on pre-trained model.
+        Args:
+            model_name (str): Model name implemented by torchvision.
+            image_size (int): Image size input to model.
+        """
+        super().__init__()
+        self.model_name = model_name
+
+        if "vit" in model_name:
+            model = getattr(torchvision.models, model_name)(image_size=image_size)
+            patch_size = int(model_name.split("_")[-1])
+
+            if weights:
+                weights = getattr(get_model_weights(model_name), weights)
+                pretrained_model = getattr(torchvision.models, model_name)(weights=weights)
+                pretrained_state_dict = pretrained_model.state_dict()
+
+                # interpolate pretrained state dict if image size does not match
+                if image_size != weights.transforms().crop_size:
+                    pretrained_state_dict = interpolate_embeddings(image_size, patch_size, pretrained_state_dict)
+                model.load_state_dict(pretrained_state_dict)
+            
+            self.model = model
+        else:
+            model = getattr(torchvision.models, model_name)()
+
+            if weights:
+                weights = getattr(get_model_weights(model_name), weights)
+                model = getattr(torchvision.models, model_name)(weights=weights)
+
+            self.feature_extractor = torch.nn.Sequential(*list(model.children())[:-1])
+
+
+    def forward(self, x: Tensor):
+        assert x.dim() == 4
+
+        if "vit" in self.model_name:
+            x = self.model._process_input(x)
+            n = x.shape[0]
+
+            # Expand the class token to the full batch
+            batch_class_token = self.model.class_token.expand(n, -1, -1)
+            x = torch.cat([batch_class_token, x], dim=1)
+
+            x = self.model.encoder(x)
+            return x[:, 0]
+        else:
+            x = self.feature_extractor(x)
+            return x.squeeze()
