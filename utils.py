@@ -6,6 +6,7 @@ import random
 import os
 import pandas as pd
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 from sklearn.metrics import precision_score, recall_score, f1_score, average_precision_score
 from torch import Tensor
@@ -13,8 +14,9 @@ from torch.utils.data import Dataset
 from typing import Optional, List, Any, Union
 _CONTOUR_INDEX = 1 if cv2.__version__.split('.')[0] == '3' else 0
 
-from dataset import NumpyDataset, TxtDataset, LaSOSplitDataset
 from clip_text import class_names_voc, BACKGROUND_CATEGORY_VOC, class_names_coco, BACKGROUND_CATEGORY_COCO, class_names_LaSO
+from dataset import NumpyDataset, TxtDataset, LaSOSplitDataset
+from loss import IULoss, ANLoss, WANLoss, EMLoss
 
 
 def scoremap2bbox(scoremap, threshold, multi_contour_eval: bool=False):
@@ -382,3 +384,45 @@ def search_best_threshold(predictions: Tensor, labels: Tensor, step: int=20, ver
     if verbose:
         print(f"Best threshold: {best_threshold:.2f}, F1: {F1:.6f}, Precision: {P:.6f}, Recall: {R:.6f}")
     return best_threshold, F1, P, R
+
+
+def get_loss_fn(loss: str, dataset: str, **kwargs):
+    """Get loss function according to the loss name.
+    Args:
+        loss (str): Loss function name.
+        dataset (str): Dataset name.
+        kwargs: others
+    Returns:
+        loss_fn (nn.Module): Loss function.
+    """
+    _, NUM_CLASSES = get_class_names(dataset)
+    
+    if loss == "CE":
+        loss_fn = nn.CrossEntropyLoss()
+
+    elif loss == "IU":
+        loss_fn = IULoss()
+
+    elif loss == "AN":
+        assert "epsilon" not in kwargs
+        loss_fn = ANLoss(**kwargs)
+
+    elif loss == "AN-LS":
+        if "epsilon" not in kwargs:
+            kwargs["epsilon"] = 0.1
+        loss_fn = ANLoss(**kwargs)
+
+    elif loss == "WAN":
+        if "gamma" not in kwargs:
+            kwargs["gamma"] = 1 / (NUM_CLASSES - 1)
+        loss_fn = WANLoss(**kwargs)
+
+    elif loss == "EM":
+        if "alpha" not in kwargs:
+            kwargs["alpha"] = 0.2 if dataset == "voc2012" else 0.1
+        loss_fn = EMLoss(**kwargs)
+
+    else:
+        raise NotImplementedError
+    
+    return loss_fn

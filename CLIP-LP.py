@@ -10,12 +10,18 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from dataset import FeatDataset
-from utils import get_class_names, evaluate, append_results, setup_seed
-from loss import IULoss, ANLoss, WANLoss
+from utils import get_class_names, evaluate, append_results, setup_seed, get_loss_fn
 
 """
 Examples:
+# voc2012
 python CLIP-LP.py --train-data-path features/${dataset}/CLIP/exp${split}_${k}shots_filtered.pt --test-data-path features/${dataset}/CLIP/val_all.pt --dataset ${dataset} --loss ${loss} --batch-size ${bs} --lr ${lr} --num-epochs ${epoch} --save-results
+
+# coco2014
+python CLIP-LP.py --train-data-path features/${dataset}/CLIP/exp${split}_${k}shots_filtered.pt --test-data-path features/${dataset}/CLIP/val_all.pt --dataset ${dataset} --loss ${loss} --batch-size ${bs} --lr ${lr} --num-epochs ${epoch} --test-interval 10 --patience 1 --save-results
+
+# LaSO
+python CLIP-LP.py --train-data-path features/LaSO/CLIP/${k}shotRun${split}ClassIdxDict.pt --test-data-path features/LaSO/CLIP/val_all.pt --dataset LaSO --loss ${loss} --batch-size ${bs} --lr ${lr} --num-epochs ${epoch} --save-results
 """
 
 
@@ -70,11 +76,13 @@ def test_loop(dataloader, model, loss_fn):
 
 
 def parse_args():
-    # define arguments
+    # define parser
     parser = argparse.ArgumentParser(description="Linear-probe CLIP: Train linear classifier using training data features.")
+
+    # data
     parser.add_argument("--train-data-path", type=str, required=True, help="The path to training features.")
     parser.add_argument("--test-data-path", type=str, required=True, help="The path to test features.")
-    parser.add_argument("--dataset", type=str, choices=["voc2012", "coco2014"], default="coco2014", help="Experimental dataset (default: voc2012).")
+    parser.add_argument("--dataset", type=str, choices=["voc2012", "coco2014", "LaSO"], default="coco2014", help="Experimental dataset (default: coco2014).")
     
     # loss
     parser.add_argument("--loss", type=str, choices=["CE", "IU", "AN", "WAN", "AN-LS"], default="CE", help="Loss type (default: CE).")
@@ -112,11 +120,11 @@ if __name__ == "__main__":
     # set up random seed
     setup_seed()
 
-    # initialize device
-    device = torch.device("cuda:0")
-
     # parse arguments
     args = parse_args()
+
+    # initialize device
+    device = torch.device("cuda:0")
     
     # initialize tensorboard writer
     writer = None
@@ -167,19 +175,8 @@ if __name__ == "__main__":
     classifier = nn.Sequential(nn.Linear(feat_dim, NUM_CLASSES))
     classifier = classifier.to(device)
 
-    # get loss function
-    if args.loss == "CE":
-        loss_fn = nn.CrossEntropyLoss()
-    elif args.loss == "IU":
-        loss_fn = IULoss()
-    elif args.loss == "AN":
-        loss_fn = ANLoss()
-    elif args.loss == "AN-LS":
-        loss_fn = ANLoss(epsilon=0.1)
-    elif args.loss == "WAN":
-        loss_fn = WANLoss(gamma=1/(NUM_CLASSES-1))
-    else:
-        raise NotImplementedError
+    # loss function
+    loss_fn = get_loss_fn(args.loss, args.dataset)
 
     # optimizer
     optimizer = torch.optim.AdamW(classifier.parameters(), lr=args.lr, weight_decay=args.weight_decay)
