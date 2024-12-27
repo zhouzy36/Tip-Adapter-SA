@@ -299,6 +299,7 @@ class FeatureExtractor(nn.Module):
         """
         super().__init__()
         self.model_name = model_name
+        self.image_size = image_size
 
         if "vit" in model_name:
             model = getattr(torchvision.models, model_name)(image_size=image_size)
@@ -315,6 +316,7 @@ class FeatureExtractor(nn.Module):
                 model.load_state_dict(pretrained_state_dict)
             
             self.model = model
+            
         else:
             model = getattr(torchvision.models, model_name)()
 
@@ -327,10 +329,10 @@ class FeatureExtractor(nn.Module):
 
     def forward(self, x: Tensor):
         assert x.dim() == 4
+        n = x.shape[0]
 
         if "vit" in self.model_name:
             x = self.model._process_input(x)
-            n = x.shape[0]
 
             # Expand the class token to the full batch
             batch_class_token = self.model.class_token.expand(n, -1, -1)
@@ -340,4 +342,13 @@ class FeatureExtractor(nn.Module):
             return x[:, 0]
         else:
             x = self.feature_extractor(x)
-            return x.squeeze()
+            x = torch.squeeze(x)
+            if n == 1:
+                x = torch.unsqueeze(x, 0)
+            return x
+
+    def get_feat_dim(self):
+        device = next(self.parameters()).device
+        dummy_x = torch.rand([1, 3, self.image_size, self.image_size]).to(device)
+        out = self.forward(dummy_x)
+        return out.shape[-1]
