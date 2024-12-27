@@ -5,13 +5,11 @@ import os
 import time
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from dataset import FeatDataset
-from loss import IULoss, ANLoss, WANLoss
 from utils import setup_seed, get_class_names, evaluate, append_results
 
 """
@@ -52,14 +50,14 @@ def train_loop(dataloader, adapter, loss_fn, optimizer):
         X = X.to(device)
         y = y.to(device)
 
-        # Compute prediction and loss
+        # compute prediction and loss
         X = X / X.norm(dim=-1, keepdim=True)
         cache_logits = adapter(X)
         clip_logits = logit_scale * X @ text_features.t()
         tip_logits = clip_logits + cache_logits * args.init_alpha
         loss = loss_fn(tip_logits, y)
 
-        # Backpropagation
+        # backpropagation
         loss.backward()
         optimizer.step()
         optimizer.zero_grad()
@@ -85,7 +83,7 @@ def test_loop(dataloader, adapter, loss_fn):
             X = X.to(device)
             y = y.to(device)
 
-            # Compute prediction and loss
+            # compute prediction and loss
             X = X / X.norm(dim=-1, keepdim=True)
             cache_logits = adapter(X)
             clip_logits = logit_scale * X @ text_features.t()
@@ -105,8 +103,10 @@ def test_loop(dataloader, adapter, loss_fn):
 
 
 def parse_args():
-    # parse arguments
+    # # define parser
     parser = argparse.ArgumentParser()
+
+    # data
     parser.add_argument("--test-data-path", type=str, required=True, help="The path to test features.")
     parser.add_argument("--dataset", type=str, default="coco2014", choices=["coco2014", "voc2012"])
     parser.add_argument("--cache-path", required=True, type=str, metavar="PATH", help="cache path")
@@ -155,18 +155,21 @@ if __name__ == "__main__":
     
     # parse arguments
     args = parse_args()
+
+    # initialize device
+    device = torch.device("cuda:0")
     
     # initialize
-    method = "Tip-Adapter-F" if args.train else "Tip-Adapter"
-    device = torch.device("cuda:0")
+    method_name = "Tip-Adapter-F" if args.train else "Tip-Adapter"
+    split_name = os.path.basename(args.train_data_path).split(".")[0]
     
     # initialize tensorboard writer
     writer = None
     if args.tensorboard and args.train:
         log_dir = os.path.join(args.log_root, # log root path
                                args.dataset, # dataset 
-                               method, # method
-                               os.path.basename(args.train_data_path).split(".")[0], # traing data
+                               method_name, # method
+                               split_name, # traing data
                                f"{args.loss}_bs{args.batch_size}_lr{args.lr}_wd{args.weight_decay}_ep{args.num_epochs}") # hyperparameters
         writer = SummaryWriter(log_dir)
 
@@ -380,6 +383,6 @@ if __name__ == "__main__":
         # write results
         result_path = os.path.join(args.result_root, 
                                    args.dataset, 
-                                   method, 
+                                   method_name, 
                                    os.path.basename(args.cache_path).split(".")[0]+".csv")
         append_results(result_data, result_path)

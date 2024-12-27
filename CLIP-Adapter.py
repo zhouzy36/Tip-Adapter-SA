@@ -46,13 +46,13 @@ def train_loop(dataloader, adapter, loss_fn, optimizer):
         X = X.to(device)
         y = y.to(device)
 
-        # Compute prediction and loss
+        # compute prediction and loss
         X = adapter(X)
         X = X / X.norm(dim=-1, keepdim=True)
         pred = logit_scale * X @ text_features.t()
         loss = loss_fn(pred, y)
 
-        # Backpropagation
+        # backpropagation
         loss.backward()
         optimizer.step()
         optimizer.zero_grad()
@@ -79,34 +79,34 @@ def test_loop(dataloader, adapter, loss_fn):
             X = X.to(device)
             y = y.to(device)
             
-            # inference
+            # compute prediction and loss
             X = adapter(X)
             X = X / X.norm(dim=-1, keepdim=True)
             pred = logit_scale * X @ text_features.t()
             loss = loss_fn(pred, y)
-            pred_logits.append(pred.softmax(dim=-1).cpu())
-
+            
             # record loss and prediction
+            pred_logits.append(pred.softmax(dim=-1).cpu())
             test_loss += loss.item()
             label_vectors.append(y.cpu())
-
     test_loss /= num_batches
     
     pred_logits = torch.cat(pred_logits, dim=0)
     label_vectors = torch.cat(label_vectors, dim=0)
+
     return test_loss, pred_logits, label_vectors
 
 
 def parse_args():
-    # define arguments
+    # define parser
     parser = argparse.ArgumentParser(description="CLIP-Adapter: Fine-tuning lightweight adapters with residual connections.")
 
-    # dataset
+    # data
     parser.add_argument("--train-data-path", type=str, required=True, help="The path to training features.")
     parser.add_argument("--test-data-path", type=str, required=True, help="The path to test features.")
     parser.add_argument("--dataset", type=str, choices=["voc2012", "coco2014"], default="coco2014", help="Experimental dataset (default: voc2012).")
 
-    # model parameters
+    # CLIP-Adapter parameters
     parser.add_argument("--reduction", type=int, default=4, help="The dimensionality reduction ratio of adapter hidden layer (default: 4). ")
     parser.add_argument("--alpha", type=float, default=0.2, help="The residual ratio of adapter  (default: 0.2).")
     
@@ -151,14 +151,18 @@ if __name__ == "__main__":
     
     # initialize device
     device = torch.device("cuda:0")
+
+    # initialize method name and split name
+    method_name = "CLIP-Adapter"
+    split_name = os.path.basename(args.train_data_path).split(".")[0]
     
     # initialize tensorboard writer
     writer = None
     if args.tensorboard:
         log_dir = os.path.join(args.log_root, # log root path
                                args.dataset, # dataset 
-                               "CLIP-Adapter", # method
-                               os.path.basename(args.train_data_path).split(".")[0], # traing data
+                               method_name, # method
+                               split_name, # traing data
                                f"{args.loss}_bs{args.batch_size}_lr{args.lr}_wd{args.weight_decay}_ep{args.num_epochs}") # hyperparameters
         writer = SummaryWriter(log_dir)
 
@@ -285,6 +289,6 @@ if __name__ == "__main__":
         print(result_data)
         result_path = os.path.join(args.result_root, 
                                    args.dataset, 
-                                   "CLIP-Adapter", 
-                                   os.path.basename(args.train_data_path).split(".")[0]+".csv")
+                                   method_name, 
+                                   f"{split_name}.csv")
         append_results(result_data, result_path)

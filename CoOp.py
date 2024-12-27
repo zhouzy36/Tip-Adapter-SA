@@ -2,11 +2,9 @@
 # Copy from CoOp (https://github.com/KaiyangZhou/CoOp/blob/main/trainers/coop.py) and modify cfg in PromptLearner
 import argparse
 import clip
-import numpy as np
 import os
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 import torchvision.transforms as transforms
@@ -260,8 +258,10 @@ def test_loop(dataloader, model, loss_fn):
 
 
 def parse_args():
+    # define parser
     parser = argparse.ArgumentParser()
-    # dataset
+
+    # data
     parser.add_argument("--dataset", type=str, required=True, choices=["coco2014", "voc2012"])
     parser.add_argument("--train-data-path", type=str, required=True, help="The path to few-shot dataset split file.")
     
@@ -329,8 +329,11 @@ if __name__ == "__main__":
     args = parse_args()
     
     # initialize device
-    method = "CoOp"
     device = torch.device("cuda:0")
+
+    # initialize method name and split name
+    method = "CoOp"
+    split_name = args.train_data_path.split("/")[-2] + "_" + os.path.basename(args.train_data_path).split(".")[0]
 
     # initialize tensorboard writer
     writer = None
@@ -338,7 +341,7 @@ if __name__ == "__main__":
         log_dir = os.path.join(args.log_root, # log root path
                                args.dataset, # dataset 
                                method, # method
-                               args.train_data_path.split("/")[-2] + "_" + os.path.basename(args.train_data_path).split(".")[0],
+                               split_name,
                                f"{args.loss}_bs{args.batch_size}_lr{args.lr}_wd{args.weight_decay}_ep{args.num_epochs}") # hyperparameters
         writer = SummaryWriter(log_dir)
 
@@ -490,5 +493,5 @@ if __name__ == "__main__":
         result_path = os.path.join(args.result_root, 
                                    args.dataset, 
                                    method, 
-                                   args.train_data_path.split("/")[-2] + "_" + os.path.basename(args.train_data_path).split(".")[0] + ".csv")
+                                   f"{split_name}.csv")
         append_results(result_data, result_path)

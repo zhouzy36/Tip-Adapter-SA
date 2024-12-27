@@ -62,8 +62,10 @@ class TipAdatperSA(nn.Module):
 
 
 def parse_args():
-    # parse arguments
+    # define parser
     parser = argparse.ArgumentParser()
+
+    # data
     parser.add_argument("--test-data-path", type=str, required=True, help="The path to test features.")
     parser.add_argument("--dataset", type=str, default="coco2014", choices=["coco2014", "voc2012", "LaSO"])
     parser.add_argument("--cache-path", required=True, type=str, metavar="PATH", help="cache path")
@@ -97,10 +99,13 @@ if __name__ == "__main__":
     # parse arguments
     args = parse_args()
     
-    # initialize
-    method = "Tip-Adapter-SA"
-    method += f"-{args.cache_path.split("/")[2]}"
+    # initialize device
     device = torch.device("cuda:0")
+
+    # initialize method name and split name
+    method_name = "Tip-Adapter-SA"
+    method_name += f"-{args.cache_path.split("/")[2]}"
+    split_name = os.path.basename(args.cache_path).split(".")[0]
 
     # load CLIP model
     model_path = "pretrained_models/ViT-B-16.pt"
@@ -225,6 +230,6 @@ if __name__ == "__main__":
         # write results
         result_path = os.path.join(args.result_root, 
                                    args.dataset, 
-                                   method, 
-                                   os.path.basename(args.cache_path).split(".")[0]+".csv")
+                                   method_name, 
+                                   f"{split_name}.csv")
         append_results(result_data, result_path)

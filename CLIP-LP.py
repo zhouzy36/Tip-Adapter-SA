@@ -35,11 +35,11 @@ def train_loop(dataloader, model, loss_fn, optimizer):
         X = X.to(device)
         y = y.to(device)
 
-        # Compute prediction and loss
+        # compute prediction and loss
         pred = model(X)
         loss = loss_fn(pred, y)
 
-        # Backpropagation
+        # backpropagation
         loss.backward()
         optimizer.step()
         optimizer.zero_grad()
@@ -58,16 +58,23 @@ def test_loop(dataloader, model, loss_fn):
     test_loss = 0.
     pred_logits = []
     label_vectors = []
+
     with torch.no_grad():
         for X, y, _ in dataloader:
+            # move data to device
             X = X.to(device)
             y = y.to(device)
+
+            # compute prediction and loss
             pred = model(X)
             loss = loss_fn(pred, y)
+
+            # record loss and prediction
             test_loss += loss.item()
-            pred_logits.append(F.sigmoid(pred).detach().cpu())
-            label_vectors.append(y.detach().cpu())
+            pred_logits.append(F.sigmoid(pred).cpu())
+            label_vectors.append(y.cpu())
     test_loss /= num_batches
+
     # evaluate
     pred_logits = torch.cat(pred_logits, dim=0)
     label_vectors = torch.cat(label_vectors, dim=0)
@@ -125,14 +132,18 @@ if __name__ == "__main__":
 
     # initialize device
     device = torch.device("cuda:0")
+
+    # initialize method name and split name
+    method_name = "CLIP-LP"
+    split_name = os.path.basename(args.train_data_path).split(".")[0]
     
     # initialize tensorboard writer
     writer = None
     if args.tensorboard:
         log_dir = os.path.join(args.log_root, # log root path
                                args.dataset, # dataset 
-                               "CLIP-LP", # method
-                               os.path.basename(args.train_data_path).split(".")[0], # traing data
+                               method_name, # method
+                               split_name, # traing data
                                f"{args.loss}_bs{args.batch_size}_lr{args.lr}_wd{args.weight_decay}_ep{args.num_epochs}") # hyperparameters
         writer = SummaryWriter(log_dir)
 
@@ -250,5 +261,5 @@ if __name__ == "__main__":
                        "best_mAP_epoch": best_mAP_epoch,
                        "best_F1_epoch": best_F1_epoch}
         print(result_data)
-        result_path = os.path.join(args.result_root, args.dataset, "CLIP-LP", os.path.basename(args.train_data_path).split(".")[0]+".csv")
+        result_path = os.path.join(args.result_root, args.dataset, method_name, f"{split_name}.csv")
         append_results(result_data, result_path)
