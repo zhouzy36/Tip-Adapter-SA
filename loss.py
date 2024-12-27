@@ -2,6 +2,7 @@
 # Implementation of some commonly used single positive multi-label learning loss functions
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch import Tensor
 
 
