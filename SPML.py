@@ -26,8 +26,8 @@ def train_loop(dataloader, model, loss_fn, optimizer):
             X, y = batch
 
         # move data to device
-        X = X.to(device)
-        y = y.to(device)
+        X = X.to(device, non_blocking=True)
+        y = y.to(device, non_blocking=True)
 
         # compute prediction and loss
         pred = model(X)
@@ -103,7 +103,7 @@ def parse_args():
     
     # training parameters
     parser.add_argument("--batch-size", type=int, default=16, help="Training batch size (default: 16).")
-    parser.add_argument("--num-workers", type=int, default=0)
+    parser.add_argument("--num-workers", type=int, default=1)
     parser.add_argument("--pin-memory", action="store_true")
     parser.add_argument("--lr", type=float, default=0.01)
     parser.add_argument("--weight-decay", type=float, default=0.)
@@ -190,9 +190,7 @@ if __name__ == "__main__":
 
     test_dataloader = DataLoader(test_dataset, 
                                  batch_size=128, 
-                                 shuffle=False, 
-                                 num_workers=args.num_workers, 
-                                 pin_memory=args.pin_memory)
+                                 shuffle=False)
     
     # model
     if args.train_mode == "linear":

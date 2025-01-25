@@ -71,7 +71,10 @@ def test_loop(dataloader, model, loss_fn):
 
             # record loss and prediction
             test_loss += loss.item()
-            pred_logits.append(F.sigmoid(pred).cpu())
+            if args.loss == "CE":
+                pred_logits.append(F.softmax(pred, dim=-1).cpu())
+            else:
+                pred_logits.append(F.sigmoid(pred).cpu())
             label_vectors.append(y.cpu())
     test_loss /= num_batches
 
@@ -92,7 +95,7 @@ def parse_args():
     parser.add_argument("--dataset", type=str, choices=["voc2012", "coco2014", "LaSO"], default="coco2014", help="Experimental dataset (default: coco2014).")
     
     # loss
-    parser.add_argument("--loss", type=str, choices=["CE", "IU", "AN", "WAN", "AN-LS"], default="CE", help="Loss type (default: CE).")
+    parser.add_argument("--loss", type=str, choices=["CE", "IU", "AN", "WAN", "AN-LS", "EM"], default="CE", help="Loss type (default: CE).")
     
     # training parameters
     parser.add_argument("--batch-size", type=int, default=16, help="Training batch size (default: 16).")
