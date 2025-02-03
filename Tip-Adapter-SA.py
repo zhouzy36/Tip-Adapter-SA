@@ -54,6 +54,7 @@ class TipAdatperSA(nn.Module):
         assert self.k*C == self.keys.shape[0]
         x = x.repeat(1, 1, self.k).reshape([-1, D]) # [N, C, D] -> [N*C*k, D]
         affinity = torch.sum(self.keys.repeat(N, 1)*x, dim=-1).reshape([N, -1]) # [N, C*k]
+        affinity[torch.isnan(affinity)] = 0.
         out = ((-1) * (self.beta - self.beta * affinity)).exp() @ self.values
         return out, affinity
     
