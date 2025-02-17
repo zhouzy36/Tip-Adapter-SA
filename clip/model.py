@@ -16,7 +16,7 @@ def upsample_pos_embed(embed, new_size):
         embed (Tensor): upsampled positional embeddings
     """
     first = embed[:1] # [1, D]
-    patch_pos_embed = embed[1:] # [196, D]
+    patch_pos_embed = embed[1:] # ViT-B/16: [196, D], RN-50: [49, D]
     N, D = patch_pos_embed.shape
     size = int(np.sqrt(N))
     assert size * size == N
@@ -88,10 +88,18 @@ class AttentionPool2d(nn.Module):
         self.c_proj = nn.Linear(embed_dim, output_dim or embed_dim)
         self.num_heads = num_heads
 
-    def forward(self, x):
+    def forward(self, x, h, w):
+        assert h == w and h % 32 == 0
+
         x = x.flatten(start_dim=2).permute(2, 0, 1)  # NCHW -> (HW)NC
         x = torch.cat([x.mean(dim=0, keepdim=True), x], dim=0)  # (HW+1)NC
-        x = x + self.positional_embedding[:, None, :].to(x.dtype)  # (HW+1)NC
+
+        if h == 224 and w == 224:
+            positional_embedding = self.positional_embedding
+        else:
+            positional_embedding = upsample_pos_embed(self.positional_embedding, new_size=(h // 32, w // 32))
+
+        x = x + positional_embedding[:, None, :].to(x.dtype)  # (HW+1)NC
         x, _ = F.multi_head_attention_forward(
             query=x[:1], key=x, value=x,
             embed_dim_to_check=x.shape[-1],
@@ -158,7 +166,9 @@ class ModifiedResNet(nn.Module):
 
         return nn.Sequential(*layers)
 
-    def forward(self, x):
+    def forward(self, x, h, w):
+        assert h == w and h % 32 == 0
+
         def stem(x):
             x = self.relu1(self.bn1(self.conv1(x)))
             x = self.relu2(self.bn2(self.conv2(x)))
@@ -172,7 +182,7 @@ class ModifiedResNet(nn.Module):
         x = self.layer2(x)
         x = self.layer3(x)
         x = self.layer4(x)
-        x = self.attnpool(x)
+        x = self.attnpool(x, h, w)
 
         return x
 
@@ -246,14 +256,17 @@ class VisionTransformer(nn.Module):
         self.patch_size = patch_size
 
     def forward(self, x: torch.Tensor, h, w):
+        assert h % self.patch_size == 0 and w % self.patch_size == 0
         x = self.conv1(x)  # shape = [*, width, grid, grid]
         x = x.reshape(x.shape[0], x.shape[1], -1)  # shape = [*, width, grid ** 2]
         x = x.permute(0, 2, 1)  # shape = [*, grid ** 2, width]
         x = torch.cat([self.class_embedding.to(x.dtype) + torch.zeros(x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=x.device), x], dim=1)  # shape = [*, grid ** 2 + 1, width]
+
         if h == 224 and w == 224:
             positional_embedding = self.positional_embedding
         else:
             positional_embedding = upsample_pos_embed(self.positional_embedding, new_size=(h // self.patch_size, w // self.patch_size))
+
         x = x + positional_embedding.to(x.dtype)
         x = self.ln_pre(x)
 
