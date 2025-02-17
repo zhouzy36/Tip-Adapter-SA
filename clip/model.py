@@ -7,16 +7,16 @@ import torch.nn.functional as F
 from torch import nn
 
 
-def upsample_pos_embed(embed, new_size):
+def upsample_pos_embed(embed: torch.Tensor, new_size: Tuple):
     """Upsample pretrained positional embedding for higher resolution
     Args:
         embed (Tensor): positional embeddings to upsample with shape [N, D]
-        new_size:
+        new_size (tuple): new positional embedding size
     Returns:
         embed (Tensor): upsampled positional embeddings
     """
     first = embed[:1] # [1, D]
-    patch_pos_embed = embed[1:] # ViT-B/16: [196, D], RN-50: [49, D]
+    patch_pos_embed = embed[1:] # ViT-B/16: [196, D], RN50: [49, D]
     N, D = patch_pos_embed.shape
     size = int(np.sqrt(N))
     assert size * size == N
@@ -89,7 +89,7 @@ class AttentionPool2d(nn.Module):
         self.num_heads = num_heads
 
     def forward(self, x, h, w):
-        assert h == w and h % 32 == 0
+        assert h == w and h % 32 == 0 # newly added
 
         x = x.flatten(start_dim=2).permute(2, 0, 1)  # NCHW -> (HW)NC
         x = torch.cat([x.mean(dim=0, keepdim=True), x], dim=0)  # (HW+1)NC
@@ -167,7 +167,7 @@ class ModifiedResNet(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x, h, w):
-        assert h == w and h % 32 == 0
+        assert h == w and h % 32 == 0 # newly added
 
         def stem(x):
             x = self.relu1(self.bn1(self.conv1(x)))
@@ -257,6 +257,7 @@ class VisionTransformer(nn.Module):
 
     def forward(self, x: torch.Tensor, h, w):
         assert h % self.patch_size == 0 and w % self.patch_size == 0
+                
         x = self.conv1(x)  # shape = [*, width, grid, grid]
         x = x.reshape(x.shape[0], x.shape[1], -1)  # shape = [*, width, grid ** 2]
         x = x.permute(0, 2, 1)  # shape = [*, grid ** 2, width]
