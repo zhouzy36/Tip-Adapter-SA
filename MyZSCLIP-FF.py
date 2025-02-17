@@ -48,12 +48,7 @@ logit_scale = model.logit_scale.exp().detach()
 hook_handles = []
 attention_weights = []
 last_features = None
-penultimate_features = None
 
-def penultimate_hook_fn(module, args, output):
-    assert isinstance(output, torch.Tensor)
-    global penultimate_features
-    penultimate_features = output
 
 def attention_hook_fn(module, args, output):
     assert isinstance(module, nn.MultiheadAttention)
@@ -87,9 +82,6 @@ for name, module in model.visual.named_modules(remove_duplicate=False):
         hook_handles.append(hook)
     if name == "transformer":
         hook = module.register_forward_hook(output_hook_fn)
-        hook_handles.append(hook)
-    if name == "transformer.resblocks.10":
-        hook = module.register_forward_hook(penultimate_hook_fn)
         hook_handles.append(hook)
 
 # get class names
@@ -132,7 +124,6 @@ with torch.no_grad():
             # reset global variable
             attention_weights = []
             last_features = None
-            penultimate_features = None
             # forward
             image = adaptive_resize(image)
             h, w = image.shape[-2:]
