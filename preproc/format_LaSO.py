@@ -8,6 +8,9 @@ pp.add_argument("--load-path", type=str, default="../datasets/coco2014", help="P
 pp.add_argument("--save-path", type=str, default="../imageset/LaSO", help="Path to output directory.")
 args = pp.parse_args()
 
+if not os.path.exists(args.save_path):
+    os.makedirs(args.save_path)
+
 img_root = os.path.join(args.load_path, "val2014")
 coco = COCO(os.path.join(args.load_path, "annotations/instances_val2014.json"))
 

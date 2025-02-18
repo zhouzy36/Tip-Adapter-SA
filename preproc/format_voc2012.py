@@ -8,6 +8,9 @@ pp.add_argument('--load-path', type=str, default='../datasets/voc2012', help='Pa
 pp.add_argument('--save-path', type=str, default='../imageset/voc2012', help='Path to output directory.')
 args = pp.parse_args()
 
+if not os.path.exists(args.save_path):
+    os.makedirs(args.save_path)
+
 catName_to_catID = {
     'aeroplane': 0,
     'bicycle': 1,

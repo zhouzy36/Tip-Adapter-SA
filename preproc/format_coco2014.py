@@ -8,6 +8,9 @@ pp.add_argument('--load-path', type=str, default='../datasets/coco2014', help='P
 pp.add_argument('--save-path', type=str, default='../imageset/coco2014', help='Path to output directory.')
 args = pp.parse_args()
 
+if not os.path.exists(args.save_path):
+    os.makedirs(args.save_path)
+
 def parse_categories(categories):
     category_list = []
     id_to_index = {}

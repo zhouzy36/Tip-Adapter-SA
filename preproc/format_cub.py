@@ -9,6 +9,9 @@ pp.add_argument('--load-path', type=str, default='../datasets/cub', help='Path t
 pp.add_argument('--save-path', type=str, default='../imageset/cub', help='Path to output directory.')
 args = pp.parse_args()
 
+if not os.path.exists(args.save_path):
+    os.makedirs(args.save_path)
+
 NUM_ATTRIBUTES = 312
 NUM_INSTANCES = 11788
 
