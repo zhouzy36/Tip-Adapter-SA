@@ -21,9 +21,9 @@ def upsample_pos_embed(embed: torch.Tensor, new_size: Tuple):
     size = int(np.sqrt(N))
     assert size * size == N
     # upsample with bilinear interpolation
-    patch_pos_embed = patch_pos_embed.permute(1, 0).view(1, D, size, size).contiguous()
+    patch_pos_embed = patch_pos_embed.permute(1, 0).reshape(1, D, size, size)
     patch_pos_embed = F.interpolate(patch_pos_embed, size=new_size, mode='bilinear')
-    patch_pos_embed = patch_pos_embed.view(D, -1).contiguous().permute(1, 0)
+    patch_pos_embed = patch_pos_embed.reshape(D, -1).permute(1, 0)
     embed = torch.cat([first, patch_pos_embed], 0)
     # embed = nn.parameter.Parameter(embed.half())
     embed = nn.parameter.Parameter(embed)
@@ -94,7 +94,8 @@ class AttentionPool2d(nn.Module):
         x = x.flatten(start_dim=2).permute(2, 0, 1)  # NCHW -> (HW)NC
         x = torch.cat([x.mean(dim=0, keepdim=True), x], dim=0)  # (HW+1)NC
 
-        if h == 224 and w == 224:
+        # upsample positional embedding when the input size is not the default size
+        if h == round((self.positional_embedding.shape[0] - 1) ** 0.5 * 32):
             positional_embedding = self.positional_embedding
         else:
             positional_embedding = upsample_pos_embed(self.positional_embedding, new_size=(h // 32, w // 32))
@@ -263,7 +264,8 @@ class VisionTransformer(nn.Module):
         x = x.permute(0, 2, 1)  # shape = [*, grid ** 2, width]
         x = torch.cat([self.class_embedding.to(x.dtype) + torch.zeros(x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=x.device), x], dim=1)  # shape = [*, grid ** 2 + 1, width]
 
-        if h == 224 and w == 224:
+        # upsample positional embedding when the input size is not the default size
+        if h == self.input_resolution and w == self.input_resolution:
             positional_embedding = self.positional_embedding
         else:
             positional_embedding = upsample_pos_embed(self.positional_embedding, new_size=(h // self.patch_size, w // self.patch_size))
