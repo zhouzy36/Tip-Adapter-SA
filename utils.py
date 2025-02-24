@@ -202,7 +202,7 @@ def post_process(model: clip.model.CLIP, x: Tensor, batch_first: bool=False, onl
     # post layer norm
     if only_class:
         out = model.visual.ln_post(x[:, 0, :])
-    else:  
+    else:
         out = model.visual.ln_post(x)
     # project
     out = out @ model.visual.proj

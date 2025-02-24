@@ -105,7 +105,7 @@ if __name__ == "__main__":
 
     # initialize method name and split name
     method_name = "Tip-Adapter-SA"
-    method_name += f"-{args.cache_path.split("/")[2]}"
+    method_name += f"-{args.cache_path.split('/')[2]}"
     split_name = os.path.basename(args.cache_path).split(".")[0]
 
     # load CLIP model

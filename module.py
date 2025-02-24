@@ -32,7 +32,7 @@ def key_smoothing(logits: Tensor, model: clip.model.CLIP, penultimate_features: 
     qkv_weight = last_vit_msa.in_proj_weight # [3*D', D']
     qkv_bias = last_vit_msa.in_proj_bias # [D']
 
-    # compute q, k, v manuallyf
+    # compute q, k, v manually
     qkv = F.linear(last_vit_ln1(penultimate_features), qkv_weight, qkv_bias)
     q, k, v = torch.split(qkv, penultimate_features.shape[-1], dim=-1) # [L+1, 1, D']
 
